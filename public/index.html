@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-debate</title>
+<style>
+  :root {
+    --fondo: #f6f5f1; --panel: #ffffff; --borde: #e2dfd6; --texto: #1d1c1a; --suave: #6d6a62;
+    --acento: #b4532a; --acento-suave: #f6e6dc; --a: #2f6f8f; --a-suave: #e3eef4; --b: #8a5a9c; --b-suave: #f0e6f4;
+    --bien: #3d7a4a; --mal: #b03a3a; --aviso: #a8741a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #171614; --panel: #201f1c; --borde: #35332e; --texto: #ebe8e0; --suave: #9d998e;
+      --acento: #e08a5b; --acento-suave: #3a2a20; --a: #7fb8d4; --a-suave: #1e2f38; --b: #c39ad3; --b-suave: #33263a;
+      --bien: #7fbf8c; --mal: #e07a7a; --aviso: #d9a94e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  button, select, textarea, input { font: inherit; color: inherit; }
+  .app { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
+  aside { border-right: 1px solid var(--borde); padding: 16px 12px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  aside h1 { font-size: 17px; margin: 0 6px 4px; letter-spacing: -0.01em; }
+  .hist { display: flex; flex-direction: column; gap: 2px; }
+  .hist button { all: unset; cursor: pointer; padding: 7px 8px; border-radius: 7px; font-size: 13.5px; color: var(--suave); display: flex; gap: 6px; align-items: baseline; }
+  .hist button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .hist button:hover, .hist button.activo { background: var(--panel); color: var(--texto); }
+  .hist small { font-size: 11px; opacity: .7; }
+  main { padding: 20px 16px 80px; min-width: 0; }
+  .col { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .barra { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; min-height: 26px; }
+  .chip { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--borde); background: var(--panel); color: var(--suave); white-space: nowrap; }
+  .chip b { font-weight: 600; color: var(--texto); }
+  .chip.bien b { color: var(--bien); } .chip.aviso b { color: var(--aviso); } .chip.mal b { color: var(--mal); }
+  .tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--suave); margin: 8px 0 -6px; font-weight: 600; }
+  textarea, input[type=text] { width: 100%; background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px; padding: 9px 11px; resize: vertical; }
+  textarea:focus, input:focus, select:focus, button:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+  select { background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; }
+  .boton { cursor: pointer; border: 1px solid var(--borde); background: var(--panel); border-radius: 8px; padding: 7px 14px; }
+  .boton:hover { border-color: var(--suave); }
+  .boton.principal { background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 600; }
+  .boton.principal:hover { filter: brightness(1.08); }
+  .boton.mini { padding: 3px 9px; font-size: 13px; }
+  .bienvenida { text-align: center; margin: 6vh 0 4px; }
+  .bienvenida h2 { all: unset; display: block; font-size: 26px; font-weight: 650; letter-spacing: -0.02em; }
+  .bienvenida p { color: var(--suave); margin: 6px 0 0; }
+  .modos { display: inline-flex; border: 1px solid var(--borde); border-radius: 9px; overflow: hidden; margin-bottom: 12px; }
+  .modos button { all: unset; cursor: pointer; padding: 6px 16px; font-size: 14px; color: var(--suave); }
+  .modos button.activo { background: var(--acento-suave); color: var(--acento); font-weight: 600; }
+  .ajustes { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-top: 12px; font-size: 13.5px; color: var(--suave); }
+  .ajustes label { display: flex; align-items: center; gap: 6px; }
+  .ajustes .fin { margin-left: auto; }
+  .roles { margin-top: 14px; border: 1px solid var(--borde); border-radius: 10px; font-size: 13.5px; }
+  .roles > div { display: grid; grid-template-columns: minmax(0, 1fr) 110px 190px; gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--borde); }
+  .roles .cab { border-top: 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--suave); font-weight: 600; padding: 6px 12px; }
+  .roles small { display: block; color: var(--suave); font-size: 12.5px; }
+  .roles select { width: 100%; } .roles .igual { color: var(--suave); font-size: 12.5px; }
+  .nota { font-size: 13px; color: var(--suave); margin: 8px 0 0; }
+  .pregunta { align-self: flex-end; max-width: 85%; background: var(--acento-suave); border-radius: 14px 14px 4px 14px; padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .estado { display: flex; align-items: center; gap: 10px; color: var(--suave); font-size: 14px; flex-wrap: wrap; }
+  .estado .sep { flex: 1; }
+  .giro { width: 14px; height: 14px; border: 2px solid var(--borde); border-top-color: var(--acento); border-radius: 50%; animation: giro .8s linear infinite; flex: none; }
+  @keyframes giro { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .giro { animation: none; } }
+  .error { color: var(--mal); }
+  .premisa { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--borde); }
+  .premisa:first-child { border-top: 0; padding-top: 0; } .premisa:last-child { padding-bottom: 0; }
+  .premisa .tit { font-weight: 600; } .premisa .tes { color: var(--suave); font-size: 14px; grid-column: 1; white-space: pre-wrap; }
+  .punto { padding: 8px 0; border-top: 1px solid var(--borde); } .punto:first-child { border-top: 0; padding-top: 0; } .punto:last-child { padding-bottom: 0; }
+  .punto ol { margin: 4px 0 0; padding-left: 22px; color: var(--suave); font-size: 14px; }
+  .premisa .nota-num { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 17px; text-align: right; }
+  .premisa .pista { grid-column: 1 / -1; height: 5px; background: var(--fondo); border-radius: 9px; overflow: hidden; }
+  .premisa .pista i { display: block; height: 100%; background: var(--acento); border-radius: 9px; transition: width .4s; }
+  .premisa.caida { opacity: .55; } .premisa.caida .tit { text-decoration: line-through; }
+  .etq { font-size: 11.5px; font-weight: 500; padding: 1px 7px; border-radius: 99px; background: var(--fondo); color: var(--suave); margin-left: 6px; white-space: nowrap; text-decoration: none; display: inline-block; }
+  .etq.gana { background: var(--acento); color: #fff; }
+  .edita { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; padding: 10px 0; border-top: 1px solid var(--borde); }
+  .edita:first-of-type { border-top: 0; }
+  .edita textarea { grid-column: 1; }
+  .pie { display: flex; gap: 8px; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; }
+  details { border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); }
+  details + details { margin-top: 8px; }
+  summary { cursor: pointer; padding: 10px 14px; display: flex; gap: 10px; align-items: center; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary .lados { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; }
+  summary .la { color: var(--a); font-weight: 600; text-align: right; } summary .lb { color: var(--b); font-weight: 600; }
+  summary .marc { font-variant-numeric: tabular-nums; font-weight: 650; white-space: nowrap; }
+  .cuerpo { padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .msj { max-width: 88%; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; }
+  .msj.a { background: var(--a-suave); align-self: flex-start; border-bottom-left-radius: 3px; }
+  .msj.b { background: var(--b-suave); align-self: flex-end; border-bottom-right-radius: 3px; }
+  .msj.verificador { align-self: center; border: 1px dashed var(--borde); font-size: 13.5px; color: var(--suave); max-width: 100%; }
+  .msj small { display: block; font-size: 11.5px; font-weight: 600; opacity: .75; margin-bottom: 2px; }
+  .arb { border-left: 3px solid var(--acento); padding: 4px 0 4px 12px; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .arb small { display: block; font-size: 11.5px; font-weight: 600; color: var(--acento); }
+  .ronda-info { font-size: 13px; color: var(--suave); margin: 6px 2px 0; }
+  .escena { white-space: pre-wrap; font-size: 14.5px; overflow-wrap: anywhere; }
+  .pred { border-top: 1px solid var(--borde); padding-top: 8px; font-size: 14.5px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; }
+  .pred .motivo { color: var(--suave); font-size: 13.5px; }
+  ul.matices { margin: 0; padding-left: 20px; } ul.matices li { margin: 4px 0; }
+  .veredicto { border-color: var(--acento); }
+  .veredicto p { margin: 0 0 8px; white-space: pre-wrap; } .veredicto p:last-child { margin: 0; }
+  .uso { font-size: 12.5px; color: var(--suave); text-align: center; }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    aside { position: static; height: auto; max-height: 190px; border-right: 0; border-bottom: 1px solid var(--borde); }
+    summary .lados { grid-template-columns: 1fr; gap: 2px; } summary .la { text-align: left; }
+    .roles > div { grid-template-columns: 1fr 1fr; } .roles .cab { display: none; } .roles .rol > span:first-child { grid-column: 1 / -1; } .roles .igual { align-self: center; }
+    .ajustes .fin { margin-left: 0; width: 100%; } .ajustes .fin .boton { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>AI-debate</h1>
+    <button class="boton" id="nuevo">+ Nuevo</button>
+    <div class="hist" id="hist"></div>
+  </aside>
+  <main><div class="col"><div class="barra" id="limites"></div><div id="vista" class="col"></div></div></main>
+</div>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const NIVEL = { low: 'bajo', medium: 'medio', high: 'alto' };
+const MODELO = { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
+const EN_MARCHA = ['generando', 'compitiendo', 'veredicto'];
+const CAMPOS = ['generadorModelo', 'modelo', 'generadorEsfuerzo', 'esfuerzo', 'final', 'intercambios', 'arbitro', 'arbitroEsfuerzo'];
+
+let lista = [];
+let run = null;        // competición abierta
+let fuente = null;     // conexión en directo
+let limites = {};
+let modo = 'debate';
+let editorDe = null;   // id cuya lista de premisas se está editando (no se repinta)
+
+async function api(ruta, metodo = 'GET', cuerpo) {
+  const r = await fetch(`/api/${ruta}`, { method: metodo, headers: { 'Content-Type': 'application/json' }, body: cuerpo ? JSON.stringify(cuerpo) : metodo === 'GET' ? undefined : '{}' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Algo ha fallado.');
+  return j;
+}
+
+// ---------- Barra de límites e historial ----------
+
+function pintarLimites(sesion) {
+  const nombre = { five_hour: 'Límite 5 h', seven_day: 'Límite semanal', seven_day_opus: 'Semanal Opus', seven_day_sonnet: 'Semanal Sonnet', overage: 'Uso extra' };
+  const estado = { allowed: ['bien', 'bien'], allowed_warning: ['cerca del tope', 'aviso'], rejected: ['agotado', 'mal'] };
+  const chips = Object.entries(limites).map(([tipo, l]) => {
+    const [txt, cls] = estado[l.estado] ?? [l.estado, 'aviso'];
+    const cuando = l.reinicia ? new Date(l.reinicia * 1000) : null;
+    const lejos = cuando && cuando - Date.now() > 20 * 3600e3;
+    const hora = cuando ? ` · se renueva ${cuando.toLocaleString('es', lejos ? { weekday: 'short', hour: '2-digit', minute: '2-digit' } : { hour: '2-digit', minute: '2-digit' })}` : '';
+    const pct = typeof l.uso === 'number' ? ` ${Math.round(l.uso <= 1 ? l.uso * 100 : l.uso)} %` : '';
+    return `<span class="chip ${cls}">${esc(nombre[tipo] ?? tipo)}: <b>${esc(txt)}${pct}</b>${hora}</span>`;
+  });
+  if (sesion && !sesion.ok) chips.unshift('<span class="chip mal"><b>Claude Code sin sesión</b> · ejecuta «claude auth login» en una terminal</span>');
+  if (chips.length || sesion) $('#limites').innerHTML = chips.join('');
+}
+
+function pintarHistorial() {
+  $('#hist').innerHTML = lista.map((r) => `<button data-id="${r.id}" class="${run?.id === r.id ? 'activo' : ''}" title="${esc(r.titulo)}"><span>${esc(r.titulo)}</span><small>${r.modo === 'historia' ? 'historia' : ''}${EN_MARCHA.includes(r.estado) ? ' ●' : ''}</small></button>`).join('');
+}
+async function cargarInicio() {
+  const d = await api('inicio');
+  lista = d.lista; limites = d.limites;
+  pintarLimites(d.sesion); pintarHistorial();
+}
+
+// ---------- Pantalla de inicio ----------
+
+function pintarInicio() {
+  run = null; editorDe = null; fuente?.close(); fuente = null;
+  history.replaceState(null, '', '#');
+  pintarHistorial();
+  const g = (k, d) => localStorage.getItem(`aid-${k}`) ?? d;
+  $('#vista').innerHTML = `
+    <div class="bienvenida"><h2>¿Qué ponemos a prueba?</h2><p>Varias IA defienden combinaciones de premisas distintas; un árbitro contrasta cuáles se ajustan a la realidad.</p></div>
+    <form class="tarjeta" id="form">
+      <div class="modos"><button type="button" data-modo="debate">Debate</button><button type="button" data-modo="historia">Historia</button></div>
+      <div id="campos"></div>
+      <div class="roles" role="table" aria-label="Qué modelo y cuánto razonamiento usa cada papel">
+        <div class="cab" role="row"><span role="columnheader">Papel</span><span role="columnheader">Modelo</span><span role="columnheader">Razonamiento</span></div>
+        <div class="rol" role="row"><span role="cell"><b>Creador de premisas</b></span>
+          <select name="generadorModelo" aria-label="Modelo del creador de premisas"><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>
+          <select name="generadorEsfuerzo" aria-label="Razonamiento del creador de premisas"><option value="low">Bajo</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
+        <div class="rol" role="row"><span role="cell"><b>Debatientes</b></span>
+          <select name="modelo" aria-label="Modelo de los debatientes"><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>
+          <select name="esfuerzo" aria-label="Razonamiento de los debatientes"><option value="low">Bajo</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
+        <div class="rol" role="row"><span role="cell"><b>Ronda final y veredicto</b></span>
+          <span class="igual">El de los debatientes</span>
+          <select name="final" aria-label="Razonamiento en la ronda final"><option value="">Igual que los debatientes</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
+        <div class="rol" role="row"><span role="cell"><b>Árbitro</b></span>
+          <select name="arbitro" aria-label="Modelo del árbitro"><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>
+          <select name="arbitroEsfuerzo" aria-label="Razonamiento del árbitro"><option value="low">Bajo</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
+      </div>
+      <div class="ajustes">
+        <label id="lint">Intercambios por duelo <select name="intercambios"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+        <label id="lweb"><input type="checkbox" name="web"> Permitir búsquedas en internet</label>
+        <span class="fin"><button class="boton principal">Generar premisas</button></span>
+      </div>
+      <p class="nota error" id="aviso" hidden></p>
+    </form>`;
+  const f = $('#form');
+  Object.assign(f.intercambios, { value: '3' }); f.generadorEsfuerzo.value = 'medium'; f.arbitro.value = 'haiku'; f.arbitroEsfuerzo.value = 'high';
+  for (const k of CAMPOS) { const v = g(k, f[k].value); if ([...f[k].options].some((o) => o.value === v)) f[k].value = v; }
+  f.web.checked = g('web', '1') === '1';
+  pintarCampos();
+}
+function pintarCampos() {
+  for (const b of document.querySelectorAll('.modos button')) b.classList.toggle('activo', b.dataset.modo === modo);
+  $('#lweb').hidden = $('#lint').hidden = modo !== 'debate';
+  $('#campos').innerHTML = modo === 'debate'
+    ? '<textarea name="pregunta" rows="4" placeholder="Escribe la cuestión que quieres poner a debate…" autofocus></textarea>'
+    : `<textarea name="historia" rows="9" placeholder="Pega aquí la historia. Separa las escenas con una línea --- o deja que se trocee sola."></textarea>
+       <input type="text" name="pregunta" placeholder="¿Qué quieres averiguar? (opcional)" style="margin-top:8px">
+       <p class="nota">Funciona con historias propias o poco conocidas: si el modelo ya conoce el final, las predicciones no valen.</p>`;
+}
+
+// ---------- Vista de una competición ----------
+
+function abrir(id) {
+  fuente?.close();
+  editorDe = null; run = null;
+  history.replaceState(null, '', `#${id}`);
+  $('#vista').innerHTML = '<div class="estado"><span class="giro"></span> Cargando…</div>';
+  fuente = new EventSource(`/api/runs/${id}/eventos`);
+  fuente.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    const antes = run?.estado;
+    run = d.run; limites = d.limites;
+    pintarLimites();
+    const enLista = lista.find((r) => r.id === run.id);
+    if (enLista) enLista.estado = run.estado;
+    if (antes !== run.estado) pintarHistorial();
+    pintarRun();
+  };
+  pintarHistorial();
+}
+
+const titulo = (id) => run.premisas.find((p) => p.id === id)?.titulo ?? id;
+const nota = (n) => (n === null || n === undefined ? '–' : Number(n).toFixed(1).replace('.', ','));
+
+function pintarRun() {
+  if (run.estado === 'revision' && editorDe === run.id) return;
+  const abiertos = new Set([...document.querySelectorAll('details[open]')].map((d) => d.dataset.k));
+  const cerrados = new Set([...document.querySelectorAll('details:not([open])')].map((d) => d.dataset.k));
+  const marcha = EN_MARCHA.includes(run.estado);
+  const c = run.config;
+  let h = `<div class="pregunta">${esc(run.modo === 'debate' ? run.pregunta : (run.pregunta ? `${run.pregunta}\n\n` : '') + `Historia en ${run.escenas.length || '…'} escenas`)}</div>`;
+
+  h += '<div class="estado">';
+  if (marcha) h += `<span class="giro"></span><span>${esc(run.actividad || 'Trabajando…')}</span>`;
+  else if (run.estado === 'error') h += `<span class="error">Se ha parado: ${esc(run.error)}</span>`;
+  else if (run.estado === 'detenido') h += '<span>Detenido.</span>';
+  else if (run.estado === 'revision') h += '<span>Revisa las combinaciones: puedes cambiarlas, quitar o añadir.</span>';
+  else h += '<span>Terminado.</span>';
+  h += `<span class="sep"></span><span class="chip">Premisas: ${MODELO[c.generadorModelo ?? c.modelo]} ${NIVEL[c.generadorEsfuerzo] ?? 'medio'} · Debate: ${MODELO[c.modelo]} ${c.esfuerzo === 'auto' ? 'bajo y luego medio' : NIVEL[c.esfuerzo]}${c.final ? ` (final ${NIVEL[c.final]})` : ''} · Árbitro: ${MODELO[c.arbitro]} ${NIVEL[c.arbitroEsfuerzo] ?? 'alto'}${c.web ? ' · internet' : ''}${run.idioma ? ` · debaten en ${esc(run.idioma)}` : ''}</span>`;
+  if (marcha) h += '<button class="boton mini" data-accion="detener">Detener</button>';
+  if (['error', 'detenido'].includes(run.estado)) h += '<button class="boton mini" data-accion="continuar">Continuar</button>';
+  if (!marcha) h += '<button class="boton mini" data-accion="borrar">Borrar</button>';
+  h += '</div>';
+
+  if (run.estado === 'revision') {
+    editorDe = run.id;
+    h += `${puntosClave()}<h2>Combinaciones que van a competir (${run.premisas.length})</h2><div class="tarjeta"><div id="editor">${run.premisas.map((p) => filaEditable(p.titulo, p.contenido)).join('')}</div>
+      <div class="pie"><button class="boton" data-accion="anadir">+ Añadir combinación</button><button class="boton principal" data-accion="empezar">Empezar la competición</button></div>
+      <p class="nota error" id="aviso" hidden></p></div>`;
+  } else if (run.premisas.length) {
+    const orden = [...run.premisas].sort((a, b) => (b.viva - a.viva) || ((b.eliminadaEn ?? 0) - (a.eliminadaEn ?? 0)) || ((b.media ?? -1) - (a.media ?? -1)));
+    h += `${puntosClave()}<h2>Combinaciones</h2><div class="tarjeta">${orden.map((p) => `
+      <div class="premisa ${p.viva ? '' : 'caida'}">
+        <div><span class="tit">${esc(p.titulo)}</span>${run.ganadora === p.id ? '<span class="etq gana">mejor parada</span>' : ''}${p.viva ? '' : `<span class="etq">cayó en la ronda ${p.eliminadaEn}</span>`}</div>
+        <div class="nota-num">${nota(p.media)}</div>
+        <div class="tes">${esc(p.contenido)}</div>
+        <div class="pista"><i style="width:${(p.media ?? 0) * 10}%"></i></div>
+      </div>`).join('')}</div>`;
+  }
+
+  for (const r of run.rondas) {
+    const nombre = run.modo === 'historia' ? `Escena ${r.n + 1} de ${run.escenas.length}` : r.final ? 'Duelo final' : `Ronda ${r.n}`;
+    h += `<h2>${nombre} · razonamiento ${NIVEL[r.esfuerzo]}</h2><div>`;
+    if (run.modo === 'debate') {
+      r.duelos.forEach((d, i) => { h += pintarDuelo(r, d, i); });
+    } else {
+      h += `<details data-k="e${r.n}"><summary><span class="lados" style="display:block">Lo que pasó de verdad</span><span class="etq">${r.hecha ? 'ver' : 'oculto hasta auditar'}</span></summary><div class="cuerpo"><div class="escena">${r.hecha ? esc(run.escenas[r.n]) : 'Se muestra cuando termina la auditoría.'}</div></div></details>`;
+      h += `<div class="tarjeta" style="margin-top:8px;display:flex;flex-direction:column;gap:8px">${r.predicciones.map((pr, i) => `
+        <div class="pred" ${i ? '' : 'style="border-top:0;padding-top:0"'}><b>${esc(titulo(pr.id))}</b><b>${pr.puntos ?? '…'}</b>
+        <div>${pr.texto ? esc(pr.texto) : '<span class="motivo">Prediciendo…</span>'}</div><span></span>
+        ${pr.motivo ? `<div class="motivo">Auditor: ${esc(pr.motivo)}</div>` : ''}</div>`).join('')}</div>`;
+    }
+    const info = [];
+    if (r.descansa) info.push(`Descansa: ${esc(titulo(r.descansa))}`);
+    if (r.eliminadas.length) info.push(`Caen: ${r.eliminadas.map((id) => esc(titulo(id))).join(', ')}`);
+    h += `${info.length ? `<p class="ronda-info">${info.join(' · ')}</p>` : ''}</div>`;
+  }
+
+  if (run.matices.length) h += `<h2>Matices que conviene no perder</h2><div class="tarjeta"><ul class="matices">${run.matices.map((m) => `<li>${esc(m)}</li>`).join('')}</ul></div>`;
+  if (run.veredicto) {
+    h += `<h2>Veredicto</h2><div class="tarjeta veredicto">${run.veredicto.split(/\n+/).map((l) => `<p>${esc(l).replace(/^([^:]{3,40}:)/, '<b>$1</b>')}</p>`).join('')}</div>`;
+  }
+  const u = run.uso;
+  if (u.llamadas) h += `<div class="uso">${u.llamadas} llamadas · ${(u.entrada + u.salida).toLocaleString('es')} tokens (${u.salida.toLocaleString('es')} escritos)${u.busquedas ? ` · ${u.busquedas} búsquedas` : ''} · por API habría costado unos ${u.coste.toFixed(2).replace('.', ',')} $</div>`;
+
+  $('#vista').innerHTML = h;
+  for (const d of document.querySelectorAll('details')) {
+    if (abiertos.has(d.dataset.k)) d.open = true; else if (cerrados.has(d.dataset.k)) d.open = false;
+  }
+}
+
+function pintarDuelo(r, d, i) {
+  const [A, B] = [titulo(d.a), titulo(d.b)];
+  const marcador = d.puntosA === null ? (d.estado === 'en curso' ? '<span class="giro" style="display:inline-block"></span>' : '· · ·') : `${d.puntosA} · ${d.puntosB}`;
+  let cuerpo = d.mensajes.map((m) => `<div class="msj ${m.autor}"><small>${m.autor === 'a' ? esc(A) : m.autor === 'b' ? esc(B) : 'Verificador'}</small>${esc(m.texto)}</div>`).join('');
+  if (d.motivo) cuerpo += `<div class="arb"><small>Árbitro${d.bucle ? ' · ha cortado por bucle' : ''}${d.estado !== 'hecho' ? ' · provisional' : ''}</small>${esc(d.motivo)}</div>`;
+  if (d.resumen) cuerpo += `<details data-k="r${r.n}-${i}"><summary><span class="lados" style="display:block;font-size:13.5px">Resumen del árbitro</span></summary><div class="cuerpo"><div class="escena">${esc(d.resumen)}</div></div></details>`;
+  return `<details data-k="d${r.n}-${i}" ${d.estado === 'en curso' ? 'open' : ''}><summary><span class="lados"><span class="la">${esc(A)}</span><span class="marc">${marcador}</span><span class="lb">${esc(B)}</span></span></summary><div class="cuerpo">${cuerpo || '<span class="nota">Esperando turno…</span>'}</div></details>`;
+}
+
+const puntosClave = () => (run.puntosClave?.length ? `<details data-k="pc" ${run.estado === 'revision' ? 'open' : ''}><summary><span class="lados" style="display:block">Puntos en disputa y sus premisas posibles (${run.puntosClave.length})</span></summary><div class="cuerpo"><div>${run.puntosClave.map((p) => `<div class="punto"><b>${esc(p.nombre)}</b><ol>${p.opciones.map((o) => `<li>${esc(o)}</li>`).join('')}</ol></div>`).join('')}</div></div></details>` : '');
+const filaEditable = (t = '', s = '') => `<div class="edita"><input type="text" value="${esc(t)}" placeholder="Título corto"><button class="boton mini" data-accion="quitar" title="Quitar">✕</button><textarea rows="${Math.max(2, s.split('\n').length)}" placeholder="Las premisas que la componen, una por línea">${esc(s)}</textarea></div>`;
+
+// ---------- Acciones ----------
+
+function avisar(texto) { const a = $('#aviso'); if (a) { a.textContent = texto; a.hidden = false; } else alert(texto); }
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  try {
+    if (b.id === 'nuevo') return pintarInicio();
+    if (b.dataset.id) return abrir(b.dataset.id);
+    if (b.dataset.modo) { modo = b.dataset.modo; return pintarCampos(); }
+    const accion = b.dataset.accion;
+    if (accion === 'quitar') return b.closest('.edita').remove();
+    if (accion === 'anadir') { $('#editor').insertAdjacentHTML('beforeend', filaEditable()); return $('#editor').lastElementChild.querySelector('input').focus(); }
+    if (accion === 'empezar') {
+      const premisas = [...document.querySelectorAll('#editor .edita')].map((f) => ({ titulo: f.querySelector('input').value, contenido: f.querySelector('textarea').value }));
+      await api(`runs/${run.id}/empezar`, 'POST', { premisas });
+      editorDe = null;
+      return;
+    }
+    if (accion === 'detener' || accion === 'continuar') return void await api(`runs/${run.id}/${accion}`, 'POST');
+    if (accion === 'borrar') {
+      if (!confirm('¿Borrar esta competición?')) return;
+      await api(`runs/${run.id}`, 'DELETE');
+      lista = lista.filter((r) => r.id !== run.id);
+      return pintarInicio();
+    }
+  } catch (error) { avisar(error.message); }
+});
+
+document.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const datos = { modo, pregunta: f.pregunta?.value ?? '', historia: f.historia?.value ?? '', modelo: f.modelo.value, esfuerzo: f.esfuerzo.value, generadorModelo: f.generadorModelo.value, generadorEsfuerzo: f.generadorEsfuerzo.value, arbitro: f.arbitro.value, arbitroEsfuerzo: f.arbitroEsfuerzo.value, final: f.final.value, intercambios: Number(f.intercambios.value), web: f.web.checked };
+  for (const k of CAMPOS) localStorage.setItem(`aid-${k}`, datos[k]);
+  localStorage.setItem('aid-web', datos.web ? '1' : '0');
+  try {
+    const { id } = await api('runs', 'POST', datos);
+    lista.unshift({ id, modo, titulo: (datos.pregunta || datos.historia).replace(/\s+/g, ' ').slice(0, 70), estado: 'generando' });
+    abrir(id);
+  } catch (error) { avisar(error.message); }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && $('#form')) $('#form').requestSubmit(); });
+
+cargarInicio().then(() => {
+  const id = location.hash.slice(1);
+  if (id && lista.some((r) => r.id === id)) abrir(id); else pintarInicio();
+}).catch(() => { $('#vista').innerHTML = '<p class="error">No se puede conectar con el servidor local.</p>'; });
+</script>
+</body>
+</html>

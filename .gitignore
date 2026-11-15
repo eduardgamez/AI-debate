@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AI-debate: debates guardados en local
+/data/
+node_modules/
