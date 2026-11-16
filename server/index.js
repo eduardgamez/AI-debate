@@ -5,10 +5,10 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'nod
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { limites, sesion } from './claude.js';
-import { competir, generarPremisas, nuevaPremisa } from './engine.js';
+import { competir, fijarCombinaciones, generarPremisas } from './engine.js';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DATOS = join(RAIZ, 'data');
+const DATOS = process.env.AI_DEBATE_DATA || join(RAIZ, 'data');
 const PUERTO = Number(process.env.PORT) || 4747;
 mkdirSync(DATOS, { recursive: true });
 
@@ -105,7 +105,7 @@ const servidor = http.createServer(async (req, res) => {
           arbitroEsfuerzo: ['low', 'medium', 'high'].includes(c.arbitroEsfuerzo) ? c.arbitroEsfuerzo : 'high',
           web: c.web === true,
         },
-        estado: 'generando', actividad: '', error: '', idioma: '', puntosClave: [], premisas: [], rondas: [], matices: [], ganadora: '', veredicto: '',
+        estado: 'generando', actividad: '', error: '', idioma: '', sabido: [], huecos: [], premisas: [], rondas: [], matices: [], ganadora: '', veredicto: '',
         uso: { llamadas: 0, entrada: 0, salida: 0, coste: 0, busquedas: 0 },
       };
       runs.set(run.id, run);
@@ -129,10 +129,9 @@ const servidor = http.createServer(async (req, res) => {
     if (req.method === 'POST' && accion === 'empezar') {
       if (run.estado !== 'revision') return json(res, 409, { error: 'Ya ha empezado.' });
       const c = await leerCuerpo(req);
-      const premisas = (Array.isArray(c.premisas) ? c.premisas : []).filter((p) => String(p?.titulo ?? '').trim() && String(p?.contenido ?? '').trim()).slice(0, 12);
-      if (premisas.length < 2) return json(res, 400, { error: 'Hacen falta al menos dos combinaciones.' });
-      run.premisas = [];
-      for (const p of premisas) run.premisas.push(nuevaPremisa(run, p.titulo, p.contenido));
+      const anteriores = run.premisas;
+      const error = fijarCombinaciones(run, c.premisas);
+      if (error) { run.premisas = anteriores; return json(res, 400, { error }); }
       lanzar(run, competir);
       return json(res, 200, {});
     }

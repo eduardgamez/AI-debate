@@ -79,7 +79,16 @@
   .etq.gana { background: var(--acento); color: #fff; }
   .edita { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; padding: 10px 0; border-top: 1px solid var(--borde); }
   .edita:first-of-type { border-top: 0; }
-  .edita textarea { grid-column: 1; }
+  .edita .elige { grid-column: 1 / -1; display: grid; gap: 6px; }
+  .elige label { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 10px; align-items: center; font-size: 13.5px; color: var(--suave); }
+  .elige select { width: 100%; }
+  .punto ul { margin: 4px 0 0; padding-left: 20px; color: var(--suave); font-size: 14px; }
+  .punto li .etq { margin-left: 4px; }
+  .disputa { margin: 0 0 4px; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13.5px; }
+  .disputa li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 6px 10px; border-radius: 8px; background: var(--fondo); }
+  .disputa .q { grid-column: 1 / -1; color: var(--suave); font-size: 12.5px; }
+  .disputa .va { color: var(--a); } .disputa .vb { color: var(--b); }
+  .disputa .m { font-variant-numeric: tabular-nums; font-weight: 650; grid-row: 2 / span 2; grid-column: 2; align-self: center; }
   .pie { display: flex; gap: 8px; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; }
   details { border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); }
   details + details { margin-top: 8px; }
@@ -109,6 +118,7 @@
     aside { position: static; height: auto; max-height: 190px; border-right: 0; border-bottom: 1px solid var(--borde); }
     summary .lados { grid-template-columns: 1fr; gap: 2px; } summary .la { text-align: left; }
     .roles > div { grid-template-columns: 1fr 1fr; } .roles .cab { display: none; } .roles .rol > span:first-child { grid-column: 1 / -1; } .roles .igual { align-self: center; }
+    .elige label { grid-template-columns: 1fr; gap: 2px; }
     .ajustes .fin { margin-left: 0; width: 100%; } .ajustes .fin .boton { width: 100%; }
   }
 </style>
@@ -178,7 +188,7 @@ function pintarInicio() {
   pintarHistorial();
   const g = (k, d) => localStorage.getItem(`aid-${k}`) ?? d;
   $('#vista').innerHTML = `
-    <div class="bienvenida"><h2>¿Qué ponemos a prueba?</h2><p>Varias IA defienden combinaciones de premisas distintas; un árbitro contrasta cuáles se ajustan a la realidad.</p></div>
+    <div class="bienvenida"><h2>¿Qué ponemos a prueba?</h2><p>Se detecta lo que no se puede saber, se reparten posibles respuestas entre varias IA y se enfrentan para ver cuáles son más probables.</p></div>
     <form class="tarjeta" id="form">
       <div class="modos"><button type="button" data-modo="debate">Debate</button><button type="button" data-modo="historia">Historia</button></div>
       <div id="campos"></div>
@@ -256,7 +266,7 @@ function pintarRun() {
   if (marcha) h += `<span class="giro"></span><span>${esc(run.actividad || 'Trabajando…')}</span>`;
   else if (run.estado === 'error') h += `<span class="error">Se ha parado: ${esc(run.error)}</span>`;
   else if (run.estado === 'detenido') h += '<span>Detenido.</span>';
-  else if (run.estado === 'revision') h += '<span>Revisa las combinaciones: puedes cambiarlas, quitar o añadir.</span>';
+  else if (run.estado === 'revision') h += '<span>Revisa los huecos y cómo se reparten sus rellenos: puedes cambiar, quitar o añadir combinaciones.</span>';
   else h += '<span>Terminado.</span>';
   h += `<span class="sep"></span><span class="chip">Premisas: ${MODELO[c.generadorModelo ?? c.modelo]} ${NIVEL[c.generadorEsfuerzo] ?? 'medio'} · Debate: ${MODELO[c.modelo]} ${c.esfuerzo === 'auto' ? 'bajo y luego medio' : NIVEL[c.esfuerzo]}${c.final ? ` (final ${NIVEL[c.final]})` : ''} · Árbitro: ${MODELO[c.arbitro]} ${NIVEL[c.arbitroEsfuerzo] ?? 'alto'}${c.web ? ' · internet' : ''}${run.idioma ? ` · debaten en ${esc(run.idioma)}` : ''}</span>`;
   if (marcha) h += '<button class="boton mini" data-accion="detener">Detener</button>';
@@ -266,16 +276,16 @@ function pintarRun() {
 
   if (run.estado === 'revision') {
     editorDe = run.id;
-    h += `${puntosClave()}<h2>Combinaciones que van a competir (${run.premisas.length})</h2><div class="tarjeta"><div id="editor">${run.premisas.map((p) => filaEditable(p.titulo, p.contenido)).join('')}</div>
+    h += `${panelHuecos()}<h2>Combinaciones que van a competir (${run.premisas.length}) · un relleno por hueco</h2><div class="tarjeta"><div id="editor">${run.premisas.map((p) => filaEditable(p)).join('')}</div>
       <div class="pie"><button class="boton" data-accion="anadir">+ Añadir combinación</button><button class="boton principal" data-accion="empezar">Empezar la competición</button></div>
       <p class="nota error" id="aviso" hidden></p></div>`;
   } else if (run.premisas.length) {
     const orden = [...run.premisas].sort((a, b) => (b.viva - a.viva) || ((b.eliminadaEn ?? 0) - (a.eliminadaEn ?? 0)) || ((b.media ?? -1) - (a.media ?? -1)));
-    h += `${puntosClave()}<h2>Combinaciones</h2><div class="tarjeta">${orden.map((p) => `
+    h += `${panelHuecos()}<h2>Combinaciones</h2><div class="tarjeta">${orden.map((p) => `
       <div class="premisa ${p.viva ? '' : 'caida'}">
         <div><span class="tit">${esc(p.titulo)}</span>${run.ganadora === p.id ? '<span class="etq gana">mejor parada</span>' : ''}${p.viva ? '' : `<span class="etq">cayó en la ronda ${p.eliminadaEn}</span>`}</div>
         <div class="nota-num">${nota(p.media)}</div>
-        <div class="tes">${esc(p.contenido)}</div>
+        <div class="tes">${esc(lineasDe(p))}</div>
         <div class="pista"><i style="width:${(p.media ?? 0) * 10}%"></i></div>
       </div>`).join('')}</div>`;
   }
@@ -314,14 +324,32 @@ function pintarRun() {
 function pintarDuelo(r, d, i) {
   const [A, B] = [titulo(d.a), titulo(d.b)];
   const marcador = d.puntosA === null ? (d.estado === 'en curso' ? '<span class="giro" style="display:inline-block"></span>' : '· · ·') : `${d.puntosA} · ${d.puntosB}`;
-  let cuerpo = d.mensajes.map((m) => `<div class="msj ${m.autor}"><small>${m.autor === 'a' ? esc(A) : m.autor === 'b' ? esc(B) : 'Verificador'}</small>${esc(m.texto)}</div>`).join('');
+  const [PA, PB] = [run.premisas.find((p) => p.id === d.a), run.premisas.find((p) => p.id === d.b)];
+  const disputa = (d.huecos ?? []).map((k) => {
+    const n = d.notasHuecos?.[k];
+    return `<li><span class="q">${esc(huecos()[k]?.pregunta ?? '')}</span><span class="va">${esc(rellenoDe(PA, k))}</span><span class="m">${n === undefined ? '' : `${n} · ${10 - n}`}</span><span class="vb">${esc(rellenoDe(PB, k))}</span></li>`;
+  }).join('');
+  let cuerpo = disputa ? `<ul class="disputa">${disputa}</ul>` : '';
+  cuerpo += d.mensajes.map((m) => `<div class="msj ${m.autor}"><small>${m.autor === 'a' ? esc(A) : m.autor === 'b' ? esc(B) : 'Verificador'}</small>${esc(m.texto)}</div>`).join('');
   if (d.motivo) cuerpo += `<div class="arb"><small>Árbitro${d.bucle ? ' · ha cortado por bucle' : ''}${d.estado !== 'hecho' ? ' · provisional' : ''}</small>${esc(d.motivo)}</div>`;
   if (d.resumen) cuerpo += `<details data-k="r${r.n}-${i}"><summary><span class="lados" style="display:block;font-size:13.5px">Resumen del árbitro</span></summary><div class="cuerpo"><div class="escena">${esc(d.resumen)}</div></div></details>`;
-  return `<details data-k="d${r.n}-${i}" ${d.estado === 'en curso' ? 'open' : ''}><summary><span class="lados"><span class="la">${esc(A)}</span><span class="marc">${marcador}</span><span class="lb">${esc(B)}</span></span></summary><div class="cuerpo">${cuerpo || '<span class="nota">Esperando turno…</span>'}</div></details>`;
+  return `<details data-k="d${r.n}-${i}" ${d.estado === 'en curso' ? 'open' : ''}><summary><span class="lados"><span class="la">${esc(A)}</span><span class="marc">${marcador}</span><span class="lb">${esc(B)}</span></span></summary><div class="cuerpo">${cuerpo}${d.mensajes.length ? '' : '<span class="nota">Esperando turno…</span>'}</div></details>`;
 }
 
-const puntosClave = () => (run.puntosClave?.length ? `<details data-k="pc" ${run.estado === 'revision' ? 'open' : ''}><summary><span class="lados" style="display:block">Puntos en disputa y sus premisas posibles (${run.puntosClave.length})</span></summary><div class="cuerpo"><div>${run.puntosClave.map((p) => `<div class="punto"><b>${esc(p.nombre)}</b><ol>${p.opciones.map((o) => `<li>${esc(o)}</li>`).join('')}</ol></div>`).join('')}</div></div></details>` : '');
-const filaEditable = (t = '', s = '') => `<div class="edita"><input type="text" value="${esc(t)}" placeholder="Título corto"><button class="boton mini" data-accion="quitar" title="Quitar">✕</button><textarea rows="${Math.max(2, s.split('\n').length)}" placeholder="Las premisas que la componen, una por línea">${esc(s)}</textarea></div>`;
+const huecos = () => run.huecos ?? [];
+const rellenoDe = (p, i) => huecos()[i]?.rellenos[p?.elige?.[i]] ?? '';
+const lineasDe = (p) => (p.elige ? huecos().map((hu, i) => `${hu.pregunta} → ${rellenoDe(p, i)}`).join('\n') : (p.contenido ?? ''));
+const mediaDe = (xs) => (xs?.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+function panelHuecos() {
+  if (!huecos().length) return '';
+  const sab = run.sabido?.length ? `<div class="punto"><b>Lo que se da por sabido</b><ul>${run.sabido.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></div>` : '';
+  const hs = huecos().map((hu) => `<div class="punto"><b>${esc(hu.pregunta)}</b><ol>${hu.rellenos.map((r, k) => {
+    const m = mediaDe(hu.notas?.[k]);
+    return `<li>${esc(r)}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
+  }).join('')}</ol></div>`).join('');
+  return `<details data-k="pc" ${['revision', 'terminado'].includes(run.estado) ? 'open' : ''}><summary><span class="lados" style="display:block">Huecos de información (${huecos().length}) y sus posibles rellenos</span></summary><div class="cuerpo"><div>${sab}${hs}</div></div></details>`;
+}
+const filaEditable = (p = { titulo: '', elige: [] }) => `<div class="edita"><input type="text" value="${esc(p.titulo)}" placeholder="Título corto"><button class="boton mini" data-accion="quitar" title="Quitar">✕</button><div class="elige">${huecos().map((hu, i) => `<label><span>${esc(hu.pregunta)}</span><select>${hu.rellenos.map((r, k) => `<option value="${k}" ${k === (p.elige?.[i] ?? 0) ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>`).join('')}</div></div>`;
 
 // ---------- Acciones ----------
 
@@ -338,7 +366,7 @@ document.addEventListener('click', async (e) => {
     if (accion === 'quitar') return b.closest('.edita').remove();
     if (accion === 'anadir') { $('#editor').insertAdjacentHTML('beforeend', filaEditable()); return $('#editor').lastElementChild.querySelector('input').focus(); }
     if (accion === 'empezar') {
-      const premisas = [...document.querySelectorAll('#editor .edita')].map((f) => ({ titulo: f.querySelector('input').value, contenido: f.querySelector('textarea').value }));
+      const premisas = [...document.querySelectorAll('#editor .edita')].map((f) => ({ titulo: f.querySelector('input').value, elige: [...f.querySelectorAll('select')].map((s) => Number(s.value)) }));
       await api(`runs/${run.id}/empezar`, 'POST', { premisas });
       editorDe = null;
       return;
