@@ -1,39 +1,47 @@
 # AI-debate
 
-Varias instancias de un LLM defienden premisas distintas y compiten entre sí; un árbitro va filtrando las que aguantan. [WIP]
+Para preguntas que una IA no puede responder de primeras porque le falta información. Varias instancias defienden posibles respuestas a lo que no se sabe y discuten cuáles son más probables. [WIP]
 
-Funciona con la suscripción de Claude Code (el CLI oficial ya autenticado), no con la API de pago.
+Usa la suscripción de Claude Code, no la API de pago.
 
 ## Cómo se usa
 
-Requisitos: Node 20 o superior y Claude Code instalado con la sesión iniciada (`claude auth login`).
+Necesitas Node 20 o superior y Claude Code con la sesión iniciada (`claude auth login`).
 
 ```
 npm start
 ```
 
-Se abre `http://localhost:4747`. No hay nada que instalar.
+Se abre `http://localhost:4747`.
 
-## Modos
+## Modo debate
 
-- **Debate.** Escribes una cuestión que no se puede responder con seguridad de primeras. Un modelo detecta sus **huecos de información**: lo que afecta a la respuesta y no se puede saber ni razonando ni buscando (intenciones, carácter, cómo reaccionará alguien, circunstancias no dichas…). Lo que sí se puede averiguar lo da por sabido. Para cada hueco propone varios **rellenos** incompatibles y los reparte en unas pocas **combinaciones** (un relleno por hueco), que puedes editar. Cada IA defiende una combinación y, en cada duelo, solo se discuten los huecos en los que la pareja no coincide. El árbitro puntúa, hueco por hueco, qué relleno es más probable, sin mirar hacia qué respuesta lleva. Los modelos debaten entre sí en inglés y lo que lees sale en español. Tras cada intercambio el árbitro resume, puntúa y corta si hay bucle. En cada ronda cae solo la cuarta parte peor puntuada, hasta un duelo final y un veredicto que también recoge lo válido de las premisas descartadas.
-- **Historia.** Pegas una historia (escenas separadas con `---`, o se trocea sola). Cada premisa predice la siguiente escena y un auditor puntúa cuánto se acercó. Solo sirve con historias que el modelo no conozca.
+1. **Huecos.** Una IA detecta lo que no se puede saber y afecta a la respuesta (carácter de alguien, cómo reaccionará, circunstancias no dichas…). Lo averiguable lo da por sabido.
+2. **Rellenos.** Cada hueco tiene varias respuestas posibles, incompatibles entre sí.
+3. **Reparto.** Cada instancia defiende una combinación: un relleno por hueco. Puedes editarlas antes de empezar.
+4. **Duelos por parejas.** Solo se discuten los huecos en los que la pareja no coincide. Un árbitro puntúa qué relleno es más probable, sin mirar a qué respuesta lleva.
+5. **Filtro.** En cada ronda cae la cuarta parte peor puntuada. Al final, un veredicto dice el relleno más probable de cada hueco y la respuesta que se sigue.
+
+Entre ellas debaten en inglés; lo que lees sale en español.
+
+## Modo historia
+
+Pegas una historia (escenas separadas con `---`, o se trocea sola). Cada combinación predice la siguiente escena y un auditor puntúa cuánto acertó. Solo sirve con historias que la IA no conozca.
 
 ## Ajustes
 
-- Modelo y nivel de razonamiento, por separado para cada papel: creador de premisas (Opus medio por defecto), debatientes (Opus bajo) y árbitro. Los debatientes van por defecto en bajo; la final puede subirse a medio o alto.
-- Intercambios por duelo (3 por defecto, uno más en la final): es lo que más pesa en el gasto.
-- El árbitro va por defecto en Haiku alto.
-- Búsquedas en internet bajo demanda: al generar premisas y cuando un debatiente o el árbitro piden comprobar un dato.
+- Modelo y razonamiento de cada papel. Por defecto: creador Opus medio, debatientes Opus bajo, árbitro Haiku alto. La final puede subirse.
+- Intercambios por duelo: 3 por defecto. Es lo que más gasta.
+- Búsquedas en internet, solo cuando hacen falta.
 
-## Límites de la suscripción
+## Límites
 
-La barra superior muestra el estado de los límites (5 horas y semanal) según los comunica el CLI. Si un límite se agota, la competición se para sola, nunca pasa a uso extra de pago, y se puede retomar con «Continuar».
+Arriba se ve el estado de los límites de 5 horas y semanal. Si uno se agota, el debate se para (nunca pasa a pago) y se retoma con «Continuar».
 
-## Estructura
+## Archivos
 
-- `server/claude.js`: llamadas al CLI (sin herramientas, sin claves de API).
-- `server/engine.js`: reglas de la competición y textos de instrucciones.
+- `server/claude.js`: llamadas a Claude Code.
+- `server/engine.js`: reglas e instrucciones de cada papel.
 - `server/index.js`: servidor local.
 - `public/index.html`: la web.
-- `data/`: competiciones guardadas (no se suben a git).
+- `data/`: debates guardados (fuera de git).
