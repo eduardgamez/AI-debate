@@ -1,6 +1,6 @@
 # AI-debate
 
-Para preguntas que una IA no puede responder de primeras porque le falta información. Varias instancias defienden posibles respuestas a lo que no se sabe y discuten cuáles son más probables. [WIP]
+Para preguntas que una IA no puede responder de primeras porque le falta información. Varias instancias defienden posibles respuestas a lo que no se sabe y discuten cuáles son más probables. 
 
 Usa la suscripción de Claude Code, no la API de pago.
 
