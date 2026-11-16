@@ -98,6 +98,7 @@ const servidor = http.createServer(async (req, res) => {
           modelo: MODELOS.includes(c.modelo) ? c.modelo : 'opus',
           esfuerzo: ESFUERZOS.includes(c.esfuerzo) ? c.esfuerzo : 'low',
           final: ['medium', 'high'].includes(c.final) ? c.final : '', // '' = igual que el resto
+          corte: [0.25, 1 / 3, 0.5].includes(c.corte) ? c.corte : 0.25,
           intercambios: [1, 2, 3, 4].includes(c.intercambios) ? c.intercambios : 3,
           generadorModelo: MODELOS.includes(c.generadorModelo) ? c.generadorModelo : (MODELOS.includes(c.modelo) ? c.modelo : 'opus'),
           generadorEsfuerzo: ['low', 'medium', 'high'].includes(c.generadorEsfuerzo) ? c.generadorEsfuerzo : 'medium',

@@ -158,13 +158,13 @@ export async function competir(run, ctx) {
   ctx.emit();
 }
 
-// Filtro progresivo: en cada ronda cae solo la cuarta parte peor puntuada.
+// Filtro progresivo: en cada ronda cae la parte peor puntuada que elija el usuario (un cuarto por defecto).
 function filtrar(run, ronda) {
   for (const p of run.premisas) p.media = media(p.puntos);
   const vivas = run.premisas.filter((p) => p.viva);
   if (vivas.length <= 2) return;
   // Nadie cae sin haber competido al menos una vez.
-  const peores = vivas.filter((p) => p.puntos.length).reverse().sort((a, b) => a.media - b.media).slice(0, Math.min(Math.ceil(vivas.length / 4), vivas.length - 2));
+  const peores = vivas.filter((p) => p.puntos.length).reverse().sort((a, b) => a.media - b.media).slice(0, Math.min(Math.ceil(vivas.length * (run.config.corte || 0.25)), vivas.length - 2));
   for (const p of peores) { p.viva = false; p.eliminadaEn = ronda.n; ronda.eliminadas.push(p.id); }
 }
 
