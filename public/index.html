@@ -19,6 +19,7 @@
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+  :root { color-scheme: light dark; } /* controles nativos (flechas del número, etc.) en el tema del sistema */
   body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   button, select, textarea, input { font: inherit; color: inherit; }
   .app { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
@@ -37,6 +38,7 @@
   .chip.bien b { color: var(--bien); } .chip.aviso b { color: var(--aviso); } .chip.mal b { color: var(--mal); }
   .tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 16px; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--suave); margin: 8px 0 -6px; font-weight: 600; }
+  input[type=number] { background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; }
   textarea, input[type=text] { width: 100%; background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px; padding: 9px 11px; resize: vertical; }
   textarea:focus, input:focus, select:focus, button:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
   select { background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; }
@@ -297,11 +299,11 @@ function pintarRun() {
       <div class="pie"><button class="boton" data-accion="anadir">+ Añadir ${historia ? 'IA' : 'combinación'}</button><button class="boton principal" data-accion="empezar">Empezar ${historia ? 'el juego' : 'la competición'}</button></div>
       <p class="nota error" id="aviso" hidden></p></div>`;
   } else if (run.premisas.length) {
-    const orden = [...run.premisas].sort((a, b) => (b.viva - a.viva) || ((b.eliminadaEn ?? 0) - (a.eliminadaEn ?? 0)) || ((b.media ?? -1) - (a.media ?? -1)));
+    const orden = [...run.premisas].sort((a, b) => (b.viva - a.viva) || ((b.eliminadaEn ?? 0) - (a.eliminadaEn ?? 0)) || (historia ? (b.valor ?? -99) - (a.valor ?? -99) : (b.media ?? -1) - (a.media ?? -1)));
     h += `${panelHuecos()}<h2>${historia ? 'IA' : 'Combinaciones'}</h2><div class="tarjeta">${orden.map((p) => `
       <div class="premisa ${p.viva ? '' : 'caida'}">
         <div><span class="tit">${esc(p.titulo)}</span>${run.ganadora === p.id ? '<span class="etq gana">mejor parada</span>' : ''}${historia && p.nacio > 1 ? `<span class="etq">entró en el fragmento ${p.nacio + 1}</span>` : ''}${p.viva ? '' : `<span class="etq">${historia ? `cayó en el fragmento ${p.eliminadaEn + 1}` : `cayó en la ronda ${p.eliminadaEn}`}</span>`}</div>
-        <div class="nota-num">${nota(p.media)}</div>
+        <div class="nota-num">${historia && p.jugadas ? `<span class="etq" title="Veces que el texto contradijo / apoyó sus posturas">✗ ${p.contras ?? 0} · ✓ ${p.apoyos ?? 0}</span> ` : ''}${nota(p.media)}</div>
         <div class="tes">${esc(lineasDe(p))}</div>
         <div class="pista"><i style="width:${(p.media ?? 0) * 10}%"></i></div>
       </div>`).join('')}</div>`;
@@ -324,6 +326,12 @@ function pintarRun() {
     const info = [];
     if (r.descansa) info.push(`Descansa: ${esc(titulo(r.descansa))}`);
     if (r.eliminadas.length) info.push(`Caen: ${r.eliminadas.map((id) => esc(titulo(id))).join(', ')}`);
+    if (r.posturas?.length) {
+      const de = (es) => r.posturas.filter((x) => x.es === es).map((x) => esc(huecos()[x.i]?.rellenos[x.k] ?? ''));
+      const [si, no] = [de('apoya'), de('contradice')];
+      if (no.length) info.push(`El texto contradice: ${no.join(', ')}`);
+      if (si.length) info.push(`El texto apoya: ${si.join(', ')}`);
+    }
     if (r.entran?.length) info.push(`Entran: ${r.entran.map((id) => esc(titulo(id))).join(', ')}`);
     h += `${info.length ? `<p class="ronda-info">${info.join(' · ')}</p>` : ''}</div>`;
   }
@@ -371,7 +379,9 @@ function panelHuecos() {
     if (!ks.length) return '';
     return `<div class="punto"><b>${esc(hu.pregunta)}</b><ol>${ks.map((k) => {
       const m = mediaDe(hu.notas?.[k]);
-      return `<li>${esc(hu.rellenos[k])}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
+      const e = hu.evid?.[k];
+      const marcas = e && (e.a || e.c) ? `<span class="etq" title="Veces que el texto la contradijo / apoyó">✗ ${e.c} · ✓ ${e.a}</span>` : '';
+      return `<li>${esc(hu.rellenos[k])}${marcas}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
     }).join('')}</ol></div>`;
   }).join('');
   return `<details data-k="pc" ${['revision', 'terminado'].includes(run.estado) ? 'open' : ''}><summary><span class="lados" style="display:block">${run.modo === 'historia' ? 'Incógnitas en juego y sus posturas · nota media de las IA que la llevan' : `Huecos de información (${huecos().length}) y sus posibles rellenos`}</span></summary><div class="cuerpo"><div>${sab}${hs}</div></div></details>`;
