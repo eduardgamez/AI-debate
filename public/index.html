@@ -232,8 +232,8 @@ function pintarInicio() {
   run = null; editorDe = null; fuente?.close(); fuente = null;
   history.replaceState(null, '', '#');
   pintarHistorial();
-  // El árbitro por defecto pasó de Haiku a Sonnet: se olvida la elección guardada una vez.
-  try { if (!localStorage.getItem('aid-arbitro-v2')) { localStorage.removeItem('aid-arbitro'); localStorage.setItem('aid-arbitro-v2', '1'); } } catch {}
+  // El árbitro por defecto ha cambiado (ahora Opus bajo): se olvida una vez la elección guardada.
+  try { if (!localStorage.getItem('aid-arbitro-v3')) { localStorage.removeItem('aid-arbitro'); localStorage.removeItem('aid-arbitroEsfuerzo'); localStorage.setItem('aid-arbitro-v3', '1'); } } catch {}
   const g = (k, d) => { try { return localStorage.getItem(`aid-${k}`) ?? d; } catch { return d; } };
   $('#vista').innerHTML = `
     <div class="bienvenida"><h2>¿Qué ponemos a prueba?</h2><p>Se detecta lo que no se puede saber, se reparten posibles respuestas entre varias IA y se enfrentan para ver cuáles son más probables.</p></div>
@@ -267,7 +267,7 @@ function pintarInicio() {
       <p class="nota error" id="aviso" hidden></p>
     </form>`;
   const f = $('#form');
-  Object.assign(f.intercambios, { value: '3' }); f.generadorEsfuerzo.value = 'medium'; f.arbitro.value = 'sonnet'; f.arbitroEsfuerzo.value = 'high';
+  Object.assign(f.intercambios, { value: '3' }); f.generadorEsfuerzo.value = 'medium'; f.arbitro.value = 'opus'; f.arbitroEsfuerzo.value = 'low';
   for (const k of CAMPOS) { const v = g(k, f[k].value); if (!f[k].options || [...f[k].options].some((o) => o.value === v)) f[k].value = v; }
   f.web.checked = g('web', '1') === '1';
   pintarCampos();

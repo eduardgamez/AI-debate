@@ -122,8 +122,8 @@ const servidor = http.createServer(async (req, res) => {
           palabras: [150, 250, 400].includes(c.palabras) ? c.palabras : 250, // modo historia: largo de cada fragmento
           generadorModelo: MODELOS.includes(c.generadorModelo) ? c.generadorModelo : (MODELOS.includes(c.modelo) ? c.modelo : 'opus'),
           generadorEsfuerzo: ['low', 'medium', 'high'].includes(c.generadorEsfuerzo) ? c.generadorEsfuerzo : 'medium',
-          arbitro: MODELOS.includes(c.arbitro) ? c.arbitro : 'sonnet',
-          arbitroEsfuerzo: ['low', 'medium', 'high'].includes(c.arbitroEsfuerzo) ? c.arbitroEsfuerzo : 'high',
+          arbitro: MODELOS.includes(c.arbitro) ? c.arbitro : 'opus',
+          arbitroEsfuerzo: ['low', 'medium', 'high'].includes(c.arbitroEsfuerzo) ? c.arbitroEsfuerzo : 'low',
           web: c.web === true,
         },
         estado: 'generando', actividad: '', error: '', idioma: '', sabido: [], huecos: [], premisas: [], rondas: [], matices: [], ganadora: '', veredicto: '',

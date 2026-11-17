@@ -424,7 +424,7 @@ async function trocear(run, ctx) {
 
 const REGLAS_CREADOR = `Juego: varias IA leen una historia fragmento a fragmento y predicen el siguiente, cada una dando por ciertas unas posturas. Tú conoces la historia entera y eliges incógnitas y versiones.
 - Incógnita: pregunta no resuelta en lo leído que ayude a predecir. Sobre todo personalidad y circunstancias personales; también lo que la historia pida. Da igual si la historia la aclara alguna vez.
-- Posturas: respuestas incompatibles que cubren el abanico (p. ej. rasgos psicopáticos: no / leves / claros), todas igual de concretas para que ninguna destaque. Rasgos o circunstancias ocultas, nunca hechos futuros ni giros de la trama.
+- Posturas: respuestas que cubren el abanico (p. ej. rasgos psicopáticos: no / leves / claros), todas igual de concretas para que ninguna destaque. Incompatibles entre sí: si una es cierta, las demás no (no hace falta que sean opuestas; puede haber varias intermedias). Nunca dos que puedan ser ciertas a la vez, como «por dinero» y «por intereses inmobiliarios». Rasgos o circunstancias ocultas, nunca hechos futuros ni giros de la trama.
 - Solo personajes y elementos que ya han aparecido en lo leído.
 - Variedad: cada incógnita que lo leído no resuelve debe tener al menos dos posturas defendidas. Si lo leído ya la resuelve, no la varíes.
 - Reparte las incógnitas entre los personajes que importan, no solo el protagonista. No abras una incógnita equivalente a otra en juego: usa la que hay.

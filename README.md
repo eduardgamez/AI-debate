@@ -41,7 +41,7 @@ Solo sirve con historias que la IA no conozca.
 
 ## Ajustes
 
-- Modelo y razonamiento de cada papel. Por defecto: creador Opus medio, debatientes Opus bajo, árbitro Sonnet alto. La final puede subirse.
+- Modelo y razonamiento de cada papel. Por defecto: creador Opus medio, debatientes Opus bajo, árbitro Opus bajo. La final puede subirse.
 - Intercambios por duelo: 3 por defecto. Es lo que más gasta.
 - Cuántas caen por ronda: 1 de cada 4, 1 de cada 3 o la mitad. Cuantas más caen, menos rondas y menos gasto.
 - Búsquedas en internet, solo cuando hacen falta.
