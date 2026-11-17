@@ -375,6 +375,8 @@ ${breve('español')}`,
 const PALABRAS_POR_FRAGMENTO = 250; // por defecto; se elige en el menú
 const corto = (run) => `En ${run.idioma || 'inglés'}, texto plano.`;
 const MAX_FRAGMENTOS = 25;
+const MARGEN = 1 / 3; // parte de la historia, por delante del fragmento nuevo, que ve el árbitro
+const contarPalabras = (t) => t.split(/\s+/).filter(Boolean).length;
 
 // Corta el texto en frases (y párrafos) sin perder nada: unir los trozos devuelve el texto original.
 function frases(texto) {
@@ -422,13 +424,12 @@ async function trocear(run, ctx) {
   if (run.escenas.length < 2) throw new Error('La historia necesita al menos dos fragmentos. Sepáralos con una línea "---" o pega un texto más largo.');
 }
 
-const REGLAS_CREADOR = `Juego: varias IA leen una historia fragmento a fragmento y predicen el siguiente, cada una dando por ciertas unas posturas. Tú conoces la historia entera y eliges incógnitas y versiones.
-- Incógnita: pregunta no resuelta en lo leído que ayude a predecir. Sobre todo personalidad y circunstancias personales; también lo que la historia pida. Da igual si la historia la aclara alguna vez. Formúlala para que tenga una sola respuesta verdadera («¿Cuál es el secreto de Clara?», no «¿Qué sabe Clara?»).
-- Posturas: respuestas que cubren el abanico (p. ej. rasgos psicopáticos: no / leves / claros), todas igual de concretas para que ninguna destaque. Incompatibles entre sí: si una es cierta, las demás no (no hace falta que sean opuestas; puede haber varias intermedias). Nunca dos que puedan ser ciertas a la vez, como «por dinero» y «por intereses inmobiliarios». Antes de responder, revisa cada incógnita y reescribe las posturas que no se excluyan. Rasgos o circunstancias ocultas, nunca hechos futuros ni giros de la trama.
-- Solo personajes y elementos que ya han aparecido en lo leído.
-- Variedad: cada incógnita que lo leído no resuelve debe tener al menos dos posturas defendidas. Si lo leído ya la resuelve, no la varíes.
-- Reparte las incógnitas entre los personajes que importan, no solo el protagonista. No abras una incógnita equivalente a otra en juego: usa la que hay.
-- Versión (una por IA): una dirección general con postura en las incógnitas que tocan esa dirección; las que no la tocan pueden quedar sin postura, si otras IA ya las cubren con posturas variadas. Pueden compartir posturas sueltas, no la dirección general. No favorezcas lo que sabes que es cierto.
+const REGLAS_CREADOR = `Juego: varias IA leen una historia fragmento a fragmento y predicen cómo sigue, cada una dando por ciertas unas suposiciones (su versión). Gana la versión que mejor predice. Tú conoces la historia entera y preparas las versiones.
+
+Lo más importante: no reveles el final. Si una postura calca lo que va a pasar, la IA que la lleve acertará por chivatazo y el juego no medirá nada. Por eso, en cada incógnita, todas las posturas deben ser igual de concretas y de plausibles con lo leído: quien no conozca el final no debe poder adivinar cuál es la cierta.
+
+- Incógnita: algo no resuelto en lo leído que ayude a predecir, sobre todo el carácter y las circunstancias de personajes ya aparecidos. Una sola respuesta verdadera; posturas incompatibles entre sí, al menos dos en juego.
+- Versión: una dirección coherente, con postura en las incógnitas que le tocan. Pueden compartir posturas sueltas, no la dirección.
 En español.`;
 
 const FORMATO_CREADOR = (extra = '') => `Solo JSON: {${extra}"huecos_nuevos":[{"clave":"N1","pregunta":"¿…?"}],"ias":[{"titulo":"3-6 palabras","posturas":[{"hueco":"N1","postura":"frase corta"}]}]}
@@ -511,7 +512,7 @@ async function prepararHistoria(run, ctx) {
   const r = await iaJSON(run, ctx, {
     ...creador(run),
     system: `${REGLAS_CREADOR}
-Solo se ha leído el fragmento 1. Entre 8 y 14 incógnitas y entre ${Math.min(4, tope(run))} y ${tope(run)} IA; cada postura con al menos un defensor. "idioma": el de las predicciones, inglés salvo razón clara.
+Solo se ha leído el fragmento 1. Prepara entre 8 y 14 incógnitas y entre ${Math.min(4, tope(run))} y ${tope(run)} versiones. "idioma": el de las predicciones, inglés salvo razón clara.
 ${FORMATO_CREADOR('"idioma":"inglés",')}`,
     prompt: `${run.pregunta ? `Lo que se quiere averiguar: ${run.pregunta}\n\n` : ''}${historiaMarcada(run, 0)}`,
   });
@@ -545,7 +546,7 @@ async function reforzar(run, ctx, ronda) {
     const r = await iaJSON(run, ctx, {
       ...creador(run),
       system: `${REGLAS_CREADOR}
-Leídos ${ronda.n + 1} de ${run.escenas.length} fragmentos. Te paso las versiones en juego con la nota de sus predicciones. Mete hasta ${cupo} versiones nuevas inspirándote en las que mejor predicen, nunca en lo que sabes del final; añade posturas o incógnitas nuevas si lo leído da pie. Normalmente llena el cupo. Claves: H1… existentes, N1… nuevas.${solas.length ? `\nSolo tienen una postura defendida: ${solas.join(', ')}. Si lo leído no las resuelve, mete alguna versión con otra postura.` : ''}
+Leídos ${ronda.n + 1} de ${run.escenas.length} fragmentos. Te paso las versiones en juego con su nota. Crea hasta ${cupo} nuevas a partir de las que mejor predicen, guiándote por las notas y no por el final; puedes abrir incógnitas nuevas. Claves: H1… existentes, N1… nuevas.${solas.length ? ` Con una sola postura en juego: ${solas.join(', ')}; si lo leído no las resuelve, añade otra.` : ''}
 ${FORMATO_CREADOR()}`,
       prompt: `${historiaMarcada(run, ronda.n)}\n\n${texto}`,
     });
@@ -572,7 +573,7 @@ async function historia(run, ctx) {
     await Promise.all(ronda.predicciones.map(async (pr) => {
       pr.texto = await ia(run, ctx, {
         modelo: run.config.modelo, esfuerzo: ronda.esfuerzo,
-        system: `Predice en 2-4 frases concretas qué pasa en el siguiente fragmento (unas ${palabras} palabras) de esta historia, dando por ciertas estas suposiciones aunque no se mencionen:\n${lineas(run, premisa(run, pr.id))}\nMarcan cómo son y actúan los personajes, pero no tienen por qué salir a la luz ya: predice solo lo que pasa después de lo último leído, sin repetir nada ya contado. No uses lo que sepas de la historia. Sin preámbulos. ${corto(run)}`,
+        system: `Predice en 2-4 frases concretas qué pasa a continuación en esta historia (unas ${palabras} palabras). Da por ciertas estas suposiciones aunque no se mencionen; marcan cómo son los personajes, no tienen por qué salir ya:\n${lineas(run, premisa(run, pr.id))}\nNo repitas lo ya contado ni uses lo que sepas de la historia. ${corto(run)}`,
         prompt: `${hastaAhora}\n\n=== Aquí termina lo leído. ¿Qué pasa a continuación? ===`,
       });
       ctx.emit();
@@ -580,11 +581,19 @@ async function historia(run, ctx) {
 
     ronda.revelada = true;
     run.actividad = `Se revela el fragmento ${n + 1}: el árbitro puntúa las predicciones…`;
+    // El árbitro ve también lo que pasa un poco después (fragmentos enteros hasta un tercio de
+    // la historia): acertar algo que ocurre algo más tarde también cuenta.
+    const despues = [];
+    for (let k = n + 1, acum = 0; k < run.escenas.length; k++) {
+      acum += contarPalabras(run.escenas[k]);
+      if (acum > MARGEN * contarPalabras(run.escenas.join(' '))) break;
+      despues.push(run.escenas[k]);
+    }
     ctx.emit();
     const j = await iaJSON(run, ctx, {
       ...arbitro(run),
-      system: `Puntúa de 1 a 10 cuánto se parece cada predicción al fragmento nuevo en lo esencial (hechos, decisiones, intenciones, tono), no en la redacción. Repetir lo ya contado no suma. No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"","puntos":1,"motivo":"una frase en español"}]}`,
-      prompt: `Historia leída hasta ahora:\n${hastaAhora}\n\nFragmento nuevo:\n${real}\n\nPredicciones:\n${ronda.predicciones.map((pr) => `[${pr.id}] ${pr.texto}`).join('\n\n')}`,
+      system: `Puntúa de 1 a 10 cuánto se parece cada predicción a lo que pasa de verdad en lo esencial (hechos, decisiones, intenciones, tono), no en la redacción. Cuenta sobre todo el fragmento nuevo.${despues.length ? ' Si la predicción anticipa algo que ocurre en los fragmentos posteriores, también suma, pero menos cuanto más tarde ocurra; lo vago («algún día se sabrá») no suma.' : ''} Repetir lo ya contado no suma. No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"","puntos":1,"motivo":"una frase en español"}]}`,
+      prompt: `Historia leída hasta ahora:\n${hastaAhora}\n\nFragmento nuevo:\n${real}${despues.length ? `\n\nFragmentos posteriores:\n${despues.join('\n\n')}` : ''}\n\nPredicciones:\n${ronda.predicciones.map((pr) => `[${pr.id}] ${pr.texto}`).join('\n\n')}`,
     });
     const notas = Array.isArray(j.notas) ? j.notas : [];
     for (const pr of ronda.predicciones) {
@@ -630,11 +639,8 @@ async function veredictoHistoria(run, ctx) {
   const { lineas: elegidas, ganadora } = eleccion(run);
   const j = await iaJSON(run, ctx, {
     modelo: run.config.modelo, esfuerzo: esfuerzoDe(run, 99, true),
-    system: `Juego de predicción sobre una historia: varias versiones, cada una con unas suposiciones, predijeron fragmento a fragmento cómo seguía. Te paso las que llegaron al final con su nota y las suposiciones de la mejor. Redacta en español llano dos líneas:
-- conclusion: cómo es la historia según la mejor versión${run.pregunta ? ', respondiendo a lo que se quería averiguar' : ''}.
-- salva: qué sigue valiendo de las demás versiones.
-Nombra las versiones por su título. Solo JSON: {"conclusion":"","salva":""}`,
-    prompt: [run.pregunta ? `Se quería averiguar: ${run.pregunta}` : '', `Suposiciones de la mejor versión:\n${elegidas.join('\n')}`, texto].filter(Boolean).join('\n\n'),
+    system: `Varias versiones de una historia, cada una con unas suposiciones, predijeron cómo seguía. Te paso las que llegaron al final con su nota y las suposiciones elegidas. Escribe en español llano: "conclusion", cómo es la historia según esas suposiciones${run.pregunta ? ', respondiendo a lo que se quería averiguar' : ''}; "salva", qué vale de las demás versiones. Nombra las versiones por su título. Solo JSON: {"conclusion":"","salva":""}`,
+    prompt: [run.pregunta ? `Se quería averiguar: ${run.pregunta}` : '', `Mejor versión: «${premisa(run, ganadora)?.titulo ?? ''}». Suposiciones elegidas:\n${elegidas.join('\n')}`, texto].filter(Boolean).join('\n\n'),
   });
   // Pedirlo no basta: los ids internos se cambian por el título de cada versión.
   const limpio = (t) => String(t ?? '').replace(/\s+/g, ' ').trim().replace(/\[?\b(p\d+)\b\]?/g, (m, id) => (premisa(run, id) ? `«${premisa(run, id).titulo}»` : m));
