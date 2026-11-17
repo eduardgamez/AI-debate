@@ -34,10 +34,10 @@ Solo sirve con historias que la IA no conozca.
 1. **Fragmentos.** Si separas la historia con `---`, se corta ahí. Si no, el árbitro la parte: cuanto más larga, más fragmentos, con cortes justo antes de cada giro.
 2. **Creador.** Lee la historia entera y elige incógnitas que aún no se saben y ayudan a predecir: sobre todo rasgos de personalidad y circunstancias personales. Cada una tiene varias posturas («¿tiene rasgos psicopáticos?»: no, leves, claros). Son rasgos ocultos, nunca hechos futuros, y solo de personajes que ya han aparecido.
 3. **Versiones.** Cada IA da por ciertas varias posturas. Pueden compartir alguna, pero cada versión va en una dirección distinta. Puedes editarlas antes de empezar.
-4. **Cada fragmento.** Cada IA predice lo que pasará. Se revela el fragmento, cada una defiende brevemente en qué acertó y el árbitro le pone nota del 1 al 10. Además, el árbitro marca cada postura como contradicha, apoyada o sin datos.
-5. **Filtro.** Cae la fracción peor parada (en el último fragmento ya no). Pesa sobre todo que el texto contradiga sus posturas (−2 cada vez); un apoyo suma poco (+1) y la nota de predicción solo desempata. Que el texto aún no diga nada no se castiga. En su primera ronda, una IA solo cae si el texto la contradice. De las que caen no queda rastro.
-6. **Refuerzo.** El creador ve las IA en juego y cómo le va a cada postura. Cuida que cada incógnita aún sin resolver tenga al menos dos posturas defendidas, y mete IA nuevas (hasta las «IA a la vez» elegidas) con combinaciones prometedoras o incógnitas nuevas. No toca las que siguen. Las IA nuevas evitan lo que el texto ha contradicho (como mucho, en algún detalle menor). Las posturas que el texto respaldó siguen disponibles aunque caiga la IA que las llevaba: el creador puede recuperarlas y el juez puede elegirlas.
-7. **Veredicto.** Para cada incógnita, la postura mejor parada entre las que llegan al final. Nada queda abierto.
+4. **Cada fragmento.** Cada IA predice lo que pasará. Se revela el fragmento y el árbitro pone nota del 1 al 10 a cada predicción. Esa nota es lo único que cuenta.
+5. **Filtro.** Caen las versiones con peor nota media (en el último fragmento ya no). En su primera ronda, una versión solo cae si saca 3 o menos. De las que caen no queda rastro.
+6. **Refuerzo.** El creador ve las versiones en juego con su nota y mete otras nuevas (hasta las «IA a la vez» elegidas), inspirándose en las que mejor predicen y abriendo incógnitas nuevas si hace falta. No toca las que siguen. Antes del último fragmento ya no entra nadie.
+7. **Veredicto.** Las suposiciones de la versión con mejor nota media; en las incógnitas que no toca, las de la siguiente mejor que sí las toca. Nada queda abierto. El juez solo redacta la conclusión y qué se salva del resto.
 
 ## Ajustes
 

@@ -70,6 +70,8 @@
   .roles small { display: block; color: var(--suave); font-size: 12.5px; }
   .roles select { width: 100%; } .roles .igual { color: var(--suave); font-size: 12.5px; }
   .nota { font-size: 13px; color: var(--suave); margin: 8px 0 0; }
+  .enlace { all: unset; cursor: pointer; color: var(--suave); text-decoration: underline dotted; font-size: 12.5px; }
+  .enlace:hover { color: var(--texto); } .enlace:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
   .pregunta { align-self: flex-end; max-width: 85%; background: var(--acento-suave); border-radius: 14px 14px 4px 14px; padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .estado { display: flex; align-items: center; gap: 10px; color: var(--suave); font-size: 14px; flex-wrap: wrap; }
   .estado .sep { flex: 1; }
@@ -150,6 +152,9 @@ const NIVEL = { low: 'bajo', medium: 'medio', high: 'alto' };
 const MODELO = { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
 const EN_MARCHA = ['generando', 'compitiendo', 'veredicto'];
 const CAMPOS = ['corte', 'generadorModelo', 'modelo', 'generadorEsfuerzo', 'esfuerzo', 'final', 'intercambios', 'arbitro', 'arbitroEsfuerzo', 'ias', 'palabras'];
+
+// Historia de prueba (inventada) para el botón «Usar ejemplo».
+const EJEMPLO = { historia: "Tomás llegó al pueblo en noviembre y alquiló la casa del antiguo farero, que llevaba diez años vacía. Decía ser fotógrafo, pero nadie le vio nunca la cámara. Cada mañana bajaba a la cala con un cuaderno y se quedaba horas mirando las rocas del espigón. Clara, la dueña del único bar, le servía el café sin hacerle preguntas, cosa rara en ella.\n\n---\n\nUna tarde de temporal, Tomás preguntó en el bar si alguien recordaba el naufragio del Esperanza, en 1998. Se hizo un silencio incómodo. El viejo Anselmo dejó la partida de cartas a medias y se marchó. Clara secó el mismo vaso durante un buen rato y luego dijo, sin mirarle, que de eso en el pueblo no se hablaba.\n\n---\n\nEsa noche Clara subió a la casa del farero con una caja de lata. Dentro había una cadena con una medalla oxidada y una foto de un niño en la cubierta de un barco. Le dijo a Tomás que llevaba veinticinco años esperando a que alguien viniera a preguntar. Tomás tardó en reaccionar: el niño de la foto era él.\n\n---\n\nClara le contó que su padre, el patrón del Esperanza, no murió en el naufragio: salvó al niño, lo dejó en la puerta del hospital de la ciudad y desapareció para siempre, porque la noche del accidente él iba borracho al timón. Anselmo era el único que lo sabía. A la mañana siguiente, Tomás fue a buscarlo; lo encontró en el espigón, mirando las mismas rocas, y se sentó a su lado sin decir nada.", pregunta: "¿Qué busca de verdad Tomás y qué sabe Clara que no dice?" };
 
 let lista = [];
 let run = null;        // competición abierta
@@ -288,7 +293,7 @@ function pintarCampos() {
     ? '<textarea name="pregunta" rows="4" placeholder="Escribe la cuestión que quieres poner a debate…" autofocus></textarea>'
     : `<textarea name="historia" rows="9" placeholder="Pega aquí la historia. Si quieres decidir tú los cortes, separa los fragmentos con una línea ---; si no, se parte sola."></textarea>
        <input type="text" name="pregunta" placeholder="¿Qué quieres averiguar? (opcional)" style="margin-top:8px">
-       <p class="nota">Funciona con historias propias o poco conocidas: si el modelo ya conoce el final, las predicciones no valen.</p>`;
+       <p class="nota">Funciona con historias propias o poco conocidas: si el modelo ya conoce el final, las predicciones no valen. <button type="button" class="enlace" data-accion="ejemplo">Usar ejemplo</button></p>`;
 }
 
 // ---------- Vista de una competición ----------
@@ -343,11 +348,11 @@ function pintarRun() {
       <div class="pie"><button class="boton" data-accion="anadir">+ Añadir ${historia ? 'IA' : 'combinación'}</button><button class="boton principal" data-accion="empezar">Empezar ${historia ? 'el juego' : 'la competición'}</button></div>
       <p class="nota error" id="aviso" hidden></p></div>`;
   } else if (run.premisas.length) {
-    const orden = [...run.premisas].sort((a, b) => (b.viva - a.viva) || ((b.eliminadaEn ?? 0) - (a.eliminadaEn ?? 0)) || (historia ? (b.valor ?? -99) - (a.valor ?? -99) : (b.media ?? -1) - (a.media ?? -1)));
+    const orden = [...run.premisas].sort((a, b) => (b.viva - a.viva) || ((b.eliminadaEn ?? 0) - (a.eliminadaEn ?? 0)) || ((b.media ?? -1) - (a.media ?? -1)));
     h += `${panelHuecos()}<h2>${historia ? 'IA' : 'Combinaciones'}</h2><div class="tarjeta">${orden.map((p) => `
       <div class="premisa ${p.viva ? '' : 'caida'}">
         <div><span class="tit">${esc(p.titulo)}</span>${run.ganadora === p.id ? '<span class="etq gana">mejor parada</span>' : ''}${historia && p.nacio > 1 ? `<span class="etq">entró en el fragmento ${p.nacio + 1}</span>` : ''}${p.viva ? '' : `<span class="etq">${historia ? `cayó en el fragmento ${p.eliminadaEn + 1}` : `cayó en la ronda ${p.eliminadaEn}`}</span>`}</div>
-        <div class="nota-num">${historia && p.jugadas ? `<span class="etq" title="Veces que el texto contradijo / apoyó sus posturas">✗ ${p.contras ?? 0} · ✓ ${p.apoyos ?? 0}</span> ` : ''}${nota(p.media)}</div>
+        <div class="nota-num">${nota(p.media)}</div>
         <div class="tes">${esc(lineasDe(p))}</div>
         <div class="pista"><i style="width:${(p.media ?? 0) * 10}%"></i></div>
       </div>`).join('')}</div>`;
@@ -370,12 +375,6 @@ function pintarRun() {
     const info = [];
     if (r.descansa) info.push(`Descansa: ${esc(titulo(r.descansa))}`);
     if (r.eliminadas.length) info.push(`Caen: ${r.eliminadas.map((id) => esc(titulo(id))).join(', ')}`);
-    if (r.posturas?.length) {
-      const de = (es) => r.posturas.filter((x) => x.es === es).map((x) => (x.cita ? `<span title="«${esc(x.cita)}»" style="text-decoration:underline dotted">${esc(huecos()[x.i]?.rellenos[x.k] ?? '')}</span>` : esc(huecos()[x.i]?.rellenos[x.k] ?? '')));
-      const [si, no] = [de('apoya'), de('contradice')];
-      if (no.length) info.push(`El texto contradice: ${no.join(', ')}`);
-      if (si.length) info.push(`El texto apoya: ${si.join(', ')}`);
-    }
     if (r.entran?.length) info.push(`Entran: ${r.entran.map((id) => esc(titulo(id))).join(', ')}`);
     h += `${info.length ? `<p class="ronda-info">${info.join(' · ')}</p>` : ''}</div>`;
   }
@@ -416,22 +415,19 @@ const mediaDe = (xs) => (xs?.length ? xs.reduce((a, b) => a + b, 0) / xs.length 
 function panelHuecos() {
   if (!huecos().length) return '';
   const sab = run.sabido?.length ? `<div class="punto"><b>Lo que se da por sabido</b><ul>${run.sabido.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></div>` : '';
-  // En historia solo se muestra lo que llevan las IA que siguen en juego.
-  const lleva = (i, k) => run.premisas.some((p) => p.viva && p.elige?.[i] === k);
-  // Suelta: la respaldó el texto, nunca la contradijo, y ya no la lleva nadie; sigue disponible.
-  const suelta = (hu, i, k) => run.modo === 'historia' && !lleva(i, k) && hu.evid?.[k]?.a > 0 && !hu.evid[k].c;
-  const enJuego = (i, k) => run.modo !== 'historia' || run.estado === 'revision' || lleva(i, k) || suelta(huecos()[i], i, k);
+  // En historia solo se muestra lo que llevan las versiones que siguen en juego, y sin nota: lo que
+  // se puntúa es la predicción de cada versión, no cada postura.
+  const historia = run.modo === 'historia';
+  const enJuego = (i, k) => !historia || run.estado === 'revision' || run.premisas.some((p) => p.viva && p.elige?.[i] === k);
   const hs = huecos().map((hu, i) => {
     const ks = hu.rellenos.map((_, k) => k).filter((k) => enJuego(i, k));
     if (!ks.length) return '';
     return `<div class="punto"><b>${esc(hu.pregunta)}</b><ol>${ks.map((k) => {
-      const m = mediaDe(hu.notas?.[k]);
-      const e = hu.evid?.[k];
-      const marcas = e && (e.a || e.c) ? `<span class="etq" title="Veces que el texto la contradijo / apoyó">✗ ${e.c} · ✓ ${e.a}</span>` : '';
-      return `<li>${esc(hu.rellenos[k])}${suelta(hu, i, k) ? '<span class="etq" title="La respaldó el texto, pero ya no la lleva ninguna IA en juego">suelta</span>' : ''}${marcas}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
+      const m = historia ? null : mediaDe(hu.notas?.[k]);
+      return `<li>${esc(hu.rellenos[k])}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
     }).join('')}</ol></div>`;
   }).join('');
-  return `<details data-k="pc" ${['revision', 'terminado'].includes(run.estado) ? 'open' : ''}><summary><span class="lados" style="display:block">${run.modo === 'historia' ? 'Incógnitas en juego y sus posturas · nota media de las IA que la llevan' : `Huecos de información (${huecos().length}) y sus posibles rellenos`}</span></summary><div class="cuerpo"><div>${sab}${hs}</div></div></details>`;
+  return `<details data-k="pc" ${['revision', 'terminado'].includes(run.estado) ? 'open' : ''}><summary><span class="lados" style="display:block">${run.modo === 'historia' ? 'Incógnitas en juego y sus posturas' : `Huecos de información (${huecos().length}) y sus posibles rellenos`}</span></summary><div class="cuerpo"><div>${sab}${hs}</div></div></details>`;
 }
 function filaEditable(p = { titulo: '', elige: [] }) {
   const parcial = run.modo === 'historia';
@@ -453,6 +449,7 @@ document.addEventListener('click', async (e) => {
     if (b.dataset.borrar) return await borrarRun(b.dataset.borrar);
     if (b.dataset.modo) { modo = b.dataset.modo; return pintarCampos(); }
     const accion = b.dataset.accion;
+    if (accion === 'ejemplo') { const f = $('#form'); f.historia.value = EJEMPLO.historia; f.pregunta.value = EJEMPLO.pregunta; return; }
     if (accion === 'quitar') return b.closest('.edita').remove();
     if (accion === 'anadir') { $('#editor').insertAdjacentHTML('beforeend', filaEditable()); return $('#editor').lastElementChild.querySelector('input').focus(); }
     if (accion === 'empezar') {

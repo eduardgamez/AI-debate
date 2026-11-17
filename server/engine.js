@@ -14,7 +14,7 @@ const MAX_COMBINACIONES = 12;
 // Modo historia: cuántas IA juegan a la vez como mucho, y topes de incógnitas y posturas.
 const TOPE_HISTORIA = 8; // por defecto; se elige en el menú
 const tope = (run) => run.config.ias || TOPE_HISTORIA;
-const MAX_HUECOS_HISTORIA = 16;
+const MAX_HUECOS_HISTORIA = 24;
 const MAX_POSTURAS = 6;
 const MAX_HUECOS = 8;
 const MAX_RELLENOS = 4;
@@ -71,7 +71,7 @@ export function fijarCombinaciones(run, combinaciones) {
   }
   return run.premisas.length < 2 ? 'Hacen falta al menos dos combinaciones distintas.' : '';
 }
-const nuevaPremisa = (run, titulo, elige, nacio) => ({ id: `p${run.premisas.length + 1}`, titulo, elige, puntos: [], media: null, viva: true, eliminadaEn: null, nacio, notas: [], jugadas: 0, apoyos: 0, contras: 0, valor: null });
+const nuevaPremisa = (run, titulo, elige, nacio) => ({ id: `p${run.premisas.length + 1}`, titulo, elige, puntos: [], media: null, viva: true, eliminadaEn: null, nacio, notas: [] });
 
 // ---------- Huecos y combinaciones ----------
 
@@ -368,9 +368,9 @@ ${breve('español')}`,
 // ---------- Modo historia ----------
 // La historia se parte en fragmentos. Un creador que la ha leído entera elige INCÓGNITAS (lo que aún
 // no se sabe en el punto de lectura y ayuda a predecir) y reparte VERSIONES entre varias IA: cada una
-// da por ciertas unas posturas. Fragmento a fragmento, cada IA predice, defiende su predicción al
-// conocer lo que pasó y un árbitro la puntúa; caen las peores y el creador mete IA nuevas.
-// Ni el creador ni las IA saben nada de las que cayeron.
+// da por ciertas unas posturas. Fragmento a fragmento, cada IA predice y un árbitro puntúa la
+// predicción: esa nota es lo único que cuenta. Caen las versiones con peor nota media y el creador
+// mete otras nuevas. Ni el creador ni las IA saben nada de las que cayeron.
 
 const PALABRAS_POR_FRAGMENTO = 250; // por defecto; se elige en el menú
 const corto = (run) => `En ${run.idioma || 'inglés'}, texto plano.`;
@@ -423,8 +423,8 @@ async function trocear(run, ctx) {
 }
 
 const REGLAS_CREADOR = `Juego: varias IA leen una historia fragmento a fragmento y predicen el siguiente, cada una dando por ciertas unas posturas. Tú conoces la historia entera y eliges incógnitas y versiones.
-- Incógnita: pregunta no resuelta en lo leído que ayude a predecir. Sobre todo personalidad y circunstancias personales; también lo que la historia pida. Da igual si la historia la aclara alguna vez.
-- Posturas: respuestas que cubren el abanico (p. ej. rasgos psicopáticos: no / leves / claros), todas igual de concretas para que ninguna destaque. Incompatibles entre sí: si una es cierta, las demás no (no hace falta que sean opuestas; puede haber varias intermedias). Nunca dos que puedan ser ciertas a la vez, como «por dinero» y «por intereses inmobiliarios». Rasgos o circunstancias ocultas, nunca hechos futuros ni giros de la trama.
+- Incógnita: pregunta no resuelta en lo leído que ayude a predecir. Sobre todo personalidad y circunstancias personales; también lo que la historia pida. Da igual si la historia la aclara alguna vez. Formúlala para que tenga una sola respuesta verdadera («¿Cuál es el secreto de Clara?», no «¿Qué sabe Clara?»).
+- Posturas: respuestas que cubren el abanico (p. ej. rasgos psicopáticos: no / leves / claros), todas igual de concretas para que ninguna destaque. Incompatibles entre sí: si una es cierta, las demás no (no hace falta que sean opuestas; puede haber varias intermedias). Nunca dos que puedan ser ciertas a la vez, como «por dinero» y «por intereses inmobiliarios». Antes de responder, revisa cada incógnita y reescribe las posturas que no se excluyan. Rasgos o circunstancias ocultas, nunca hechos futuros ni giros de la trama.
 - Solo personajes y elementos que ya han aparecido en lo leído.
 - Variedad: cada incógnita que lo leído no resuelve debe tener al menos dos posturas defendidas. Si lo leído ya la resuelve, no la varíes.
 - Reparte las incógnitas entre los personajes que importan, no solo el protagonista. No abras una incógnita equivalente a otra en juego: usa la que hay.
@@ -437,33 +437,20 @@ Una postura compartida se escribe igual en todas.`;
 // Toda la historia, con una marca en el punto hasta el que han leído las IA.
 const historiaMarcada = (run, n) => run.escenas.map((e, i) => `[Fragmento ${i + 1}]\n${e}${i === n ? '\n\n=== HASTA AQUÍ HAN LEÍDO ===' : ''}`).join('\n\n');
 
-// Lo que sigue en juego: solo las IA vivas y sus posturas. De lo eliminado no queda rastro.
+// Lo que sigue en juego: solo las versiones vivas, sus posturas y su nota. De lo eliminado no queda rastro.
+const notaVersion = (p) => (p.puntos.length ? `nota media ${p.media.toFixed(1)} en ${p.puntos.length} fragm.` : 'aún sin nota');
 function vistaViva(run, claves = true) {
   const vivas = run.premisas.filter((p) => p.viva);
   const posturasDe = (i) => [...new Set(vivas.filter((p) => tiene(p, i)).map((p) => p.elige[i]))];
-  // Posturas sueltas: apoyadas por el texto, nunca contradichas, que ya no lleva ninguna IA viva.
-  const sueltasDe = (i) => run.huecos[i].rellenos.map((_, k) => k).filter((k) => {
-    const e = evidencia(run.huecos[i], k);
-    return e.a > 0 && e.c === 0 && !posturasDe(i).includes(k);
-  });
-  const usados = indices(run).filter((i) => posturasDe(i).length || sueltasDe(i).length);
+  const usados = indices(run).filter((i) => posturasDe(i).length);
   const clave = (i) => `H${usados.indexOf(i) + 1}`;
   const nombre = (i) => (claves ? clave(i) : run.huecos[i].pregunta);
-  const notaDe = (i, k) => {
-    const e = evidencia(run.huecos[i], k);
-    const ms = vivas.filter((p) => p.elige[i] === k && p.media !== null).map((p) => p.media);
-    return `apoyada ${e.a}, contradicha ${e.c}${ms.length ? `; predicción ${media(ms).toFixed(1)}` : ''}`;
-  };
-  const huecos = usados.map((i) => `${claves ? `${clave(i)}. ` : ''}${run.huecos[i].pregunta}\n${[
-    ...posturasDe(i).map((k) => `   - ${run.huecos[i].rellenos[k]} — ${notaDe(i, k)}`),
-    ...sueltasDe(i).map((k) => `   - ${run.huecos[i].rellenos[k]} — ${notaDe(i, k)} (suelta: ninguna IA en juego la lleva)`),
-  ].join('\n')}`).join('\n');
-  const ias = vivas.map((p) => `[${p.id}] «${p.titulo}» — ${p.jugadas ? `${p.contras ?? 0} contradicciones, ${p.apoyos ?? 0} apoyos en ${p.jugadas} fragm.; predicción ${p.media === null ? '–' : p.media.toFixed(1)}` : 'aún no ha jugado'}\n${usados.filter((i) => tiene(p, i)).map((i) => `   · ${nombre(i)} → ${relleno(run, p, i)}`).join('\n')}`).join('\n');
+  const huecos = usados.map((i) => `${clave(i)}. ${run.huecos[i].pregunta}\n${posturasDe(i).map((k) => `   - ${run.huecos[i].rellenos[k]}`).join('\n')}`).join('\n');
+  const ias = vivas.map((p) => `[${p.id}] «${p.titulo}» — ${notaVersion(p)}\n${usados.filter((i) => tiene(p, i)).map((i) => `   · ${nombre(i)} → ${relleno(run, p, i)}`).join('\n')}`).join('\n');
   return {
     mapa: new Map(usados.map((i) => [clave(i), i])),
-    solas: usados.filter((i) => posturasDe(i).length + sueltasDe(i).length === 1).map(clave),
-    sueltas: usados.some((i) => sueltasDe(i).length),
-    texto: `Incógnitas (veces que el texto ha apoyado o contradicho cada postura; nota media de predicción de quienes la llevan):\n${huecos}\n\nIA en juego:\n${ias}`,
+    solas: usados.filter((i) => posturasDe(i).length === 1).map(clave),
+    texto: claves ? `Incógnitas en juego y sus posturas:\n${huecos}\n\nVersiones en juego (nota media 1-10 de sus predicciones):\n${ias}` : `Versiones que llegaron al final (nota media 1-10 de sus predicciones):\n${ias}`,
   };
 }
 
@@ -514,11 +501,6 @@ function aplicarCreacion(run, r, mapa, cupo, nacio) {
   return nuevas;
 }
 
-// Nota de cada postura: la media de las IA vivas que la llevan.
-function notasPorPostura(run) {
-  const vivas = run.premisas.filter((p) => p.viva && p.media !== null);
-  run.huecos.forEach((h, i) => { h.notas = h.rellenos.map((_, k) => vivas.filter((p) => p.elige[i] === k).map((p) => p.media)); });
-}
 
 const creador = (run) => ({ modelo: run.config.generadorModelo || run.config.modelo, esfuerzo: run.config.generadorEsfuerzo || 'medium' });
 
@@ -529,7 +511,7 @@ async function prepararHistoria(run, ctx) {
   const r = await iaJSON(run, ctx, {
     ...creador(run),
     system: `${REGLAS_CREADOR}
-Solo se ha leído el fragmento 1. Hasta 10 incógnitas y entre ${Math.min(4, tope(run))} y ${tope(run)} IA; cada postura con al menos un defensor. "idioma": el de las predicciones, inglés salvo razón clara.
+Solo se ha leído el fragmento 1. Entre 8 y 14 incógnitas y entre ${Math.min(4, tope(run))} y ${tope(run)} IA; cada postura con al menos un defensor. "idioma": el de las predicciones, inglés salvo razón clara.
 ${FORMATO_CREADOR('"idioma":"inglés",')}`,
     prompt: `${run.pregunta ? `Lo que se quiere averiguar: ${run.pregunta}\n\n` : ''}${historiaMarcada(run, 0)}`,
   });
@@ -559,16 +541,15 @@ async function reforzar(run, ctx, ronda) {
   if (cupo > 0) {
     run.actividad = 'El creador revisa las incógnitas y decide si entran IA nuevas…';
     ctx.emit();
-    const { mapa, texto, solas, sueltas } = vistaViva(run);
+    const { mapa, texto, solas } = vistaViva(run);
     const r = await iaJSON(run, ctx, {
       ...creador(run),
       system: `${REGLAS_CREADOR}
-Leídos ${ronda.n + 1} de ${run.escenas.length} fragmentos. Te paso las IA en juego y cómo les va. Mete hasta ${cupo} IA nuevas guiándote solo por lo que muestra el texto y las notas, nunca por lo que sabes del final: parte de las posturas apoyadas y añade posturas o incógnitas nuevas si lo leído da pie. Evita lo contradicho por el texto: ninguna dirección debe ir por ahí, aunque arrastrarlo en un detalle menor no es grave.${sueltas ? ' Las posturas "sueltas" las respaldó el texto pero ya no las lleva nadie: recupéralas en IA nuevas.' : ''} Normalmente llena el cupo. Claves: H1… existentes, N1… nuevas.${solas.length ? `\nSolo tienen una postura defendida: ${solas.join(', ')}. Si lo leído no las resuelve, mete alguna IA con otra postura.` : ''}
+Leídos ${ronda.n + 1} de ${run.escenas.length} fragmentos. Te paso las versiones en juego con la nota de sus predicciones. Mete hasta ${cupo} versiones nuevas inspirándote en las que mejor predicen, nunca en lo que sabes del final; añade posturas o incógnitas nuevas si lo leído da pie. Normalmente llena el cupo. Claves: H1… existentes, N1… nuevas.${solas.length ? `\nSolo tienen una postura defendida: ${solas.join(', ')}. Si lo leído no las resuelve, mete alguna versión con otra postura.` : ''}
 ${FORMATO_CREADOR()}`,
       prompt: `${historiaMarcada(run, ronda.n)}\n\n${texto}`,
     });
     ronda.entran = aplicarCreacion(run, r, mapa, cupo, ronda.n + 1);
-    notasPorPostura(run);
   }
   ronda.creada = true;
   ctx.emit();
@@ -581,7 +562,7 @@ async function historia(run, ctx) {
     const n = run.rondas.length + 1; // se predice el fragmento n (el 0 es el comienzo)
     const vivas = run.premisas.filter((p) => p.viva);
     const final = n === run.escenas.length - 1;
-    const ronda = { n, final, esfuerzo: esfuerzoDe(run, n, final), predicciones: vivas.map((p) => ({ id: p.id, texto: '', defensa: '', puntos: null, motivo: '' })), eliminadas: [], entran: [], revelada: false, creada: final, hecha: false };
+    const ronda = { n, final, esfuerzo: esfuerzoDe(run, n, final), predicciones: vivas.map((p) => ({ id: p.id, texto: '', puntos: null, motivo: '' })), eliminadas: [], entran: [], revelada: false, creada: final, hecha: false };
     run.rondas.push(ronda);
     const real = run.escenas[n];
     const palabras = Math.round(real.split(/\s+/).length / 10) * 10 || 10;
@@ -598,31 +579,12 @@ async function historia(run, ctx) {
     }));
 
     ronda.revelada = true;
-    run.actividad = `Se revela el fragmento ${n + 1}: cada IA defiende su predicción…`;
+    run.actividad = `Se revela el fragmento ${n + 1}: el árbitro puntúa las predicciones…`;
     ctx.emit();
-    await Promise.all(ronda.predicciones.map(async (pr) => {
-      pr.defensa = await ia(run, ctx, {
-        modelo: run.config.modelo, esfuerzo: ronda.esfuerzo,
-        system: `Predijiste el siguiente fragmento de una historia antes de leerlo. Di en 1-3 frases en qué se parece al real, sin inventar ni cambiar lo dicho. ${corto(run)}`,
-        prompt: `Tu predicción:\n${pr.texto}\n\nFragmento real:\n${real}`,
-      });
-      ctx.emit();
-    }));
-
-    run.actividad = `El árbitro puntúa las predicciones del fragmento ${n + 1}…`;
-    ctx.emit();
-    // Cada postura en juego se juzga una vez frente al texto, la lleve quien la lleve.
-    const enJuego = [];
-    for (const pr of ronda.predicciones) {
-      const p = premisa(run, pr.id);
-      for (const i of indices(run)) if (tiene(p, i) && !enJuego.some((x) => x.i === i && x.k === p.elige[i])) enJuego.push({ i, k: p.elige[i] });
-    }
     const j = await iaJSON(run, ctx, {
       ...arbitro(run),
-      system: `1) Puntúa de 1 a 10 cuánto se parece cada predicción al fragmento real en lo esencial (hechos, decisiones, intenciones, tono). La defensa, escrita después, solo señala coincidencias: no suma nada que la predicción no dijera.
-2) Para cada postura numerada (suposiciones ocultas de las IA), a la luz de toda la historia leída: "contradice" solo si una frase del fragmento nuevo la desmiente (cópiala en "cita"); "apoya" si el fragmento nuevo la respalda con claridad; "nada" si no dice nada nuevo. Ante la duda, "nada". Sé coherente con cómo se juzgó antes.
-No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"","puntos":1,"motivo":"una frase en español"}],"posturas":[{"n":1,"es":"nada","cita":""}]}`,
-      prompt: `Historia leída hasta ahora:\n${hastaAhora}\n\nFragmento nuevo:\n${real}\n\n${ronda.predicciones.map((pr) => `[${pr.id}]\nPredicción: ${pr.texto}\nDefensa: ${pr.defensa}`).join('\n\n')}\n\nPosturas:\n${enJuego.map(({ i, k }, x) => { const e = evidencia(run.huecos[i], k); return `[${x + 1}] ${run.huecos[i].pregunta} → ${run.huecos[i].rellenos[k]}${e.a || e.c ? ` (antes: apoyada ${e.a}, contradicha ${e.c})` : ''}`; }).join('\n')}`,
+      system: `Puntúa de 1 a 10 cuánto se parece cada predicción al fragmento nuevo en lo esencial (hechos, decisiones, intenciones, tono), no en la redacción. Repetir lo ya contado no suma. No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"","puntos":1,"motivo":"una frase en español"}]}`,
+      prompt: `Historia leída hasta ahora:\n${hastaAhora}\n\nFragmento nuevo:\n${real}\n\nPredicciones:\n${ronda.predicciones.map((pr) => `[${pr.id}] ${pr.texto}`).join('\n\n')}`,
     });
     const notas = Array.isArray(j.notas) ? j.notas : [];
     for (const pr of ronda.predicciones) {
@@ -632,66 +594,50 @@ No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"",
       pr.motivo = String(nota.motivo ?? '');
       premisa(run, pr.id).puntos.push(pr.puntos);
     }
-    const juicios = Array.isArray(j.posturas) ? j.posturas : [];
-    ronda.posturas = enJuego.map(({ i, k }, x) => {
-      const juicio = juicios.find((y) => Number(y?.n) === x + 1);
-      const cita = String(juicio?.cita ?? '').trim();
-      let es = String(juicio?.es ?? '').toLowerCase();
-      if (es === 'contradice' && !cita) es = 'nada'; // sin una frase que la desmienta, no hay contradicción
-      const e = evidencia(run.huecos[i], k);
-      if (es === 'apoya') e.a++; else if (es === 'contradice') e.c++;
-      return { i, k, es: ['apoya', 'contradice'].includes(es) ? es : 'nada', ...(es === 'contradice' ? { cita: cita.slice(0, 300) } : {}) };
-    });
-    for (const pr of ronda.predicciones) {
-      const p = premisa(run, pr.id);
-      p.jugadas = (p.jugadas ?? 0) + 1;
-      for (const { i, k, es } of ronda.posturas) {
-        if (p.elige[i] !== k) continue;
-        if (es === 'apoya') p.apoyos = (p.apoyos ?? 0) + 1;
-        if (es === 'contradice') p.contras = (p.contras ?? 0) + 1;
-      }
-    }
-    if (!final) filtrarHistoria(run, ronda); else valorar(run);
-    notasPorPostura(run);
+    for (const p of run.premisas) p.media = media(p.puntos);
+    if (!final) filtrarHistoria(run, ronda);
     ronda.hecha = true;
     ctx.emit();
   }
 }
 
-// Lo que decide quién cae: cada contradicción del texto resta 2, cada apoyo suma 1 (por ronda
-// jugada) y la nota de predicción (0-1) solo desempata.
-const PESO_CONTRA = 2;
-const evidencia = (h, k) => { h.evid ??= []; return (h.evid[k] ??= { a: 0, c: 0 }); };
-function valorar(run) {
-  for (const p of run.premisas) {
-    p.media = media(p.puntos);
-    p.valor = -PESO_CONTRA * (p.contras ?? 0) + (p.apoyos ?? 0) / Math.max(1, p.jugadas ?? 0) + (p.media ?? 5) / 10;
-  }
-}
-// En su primera ronda, una IA solo puede caer si el texto la contradice.
+// Caen las versiones con peor nota media. Con una sola nota no hay bastante para juzgar: una versión
+// nueva solo cae en su primera ronda si esa nota es muy mala.
+const NOTA_MUY_BAJA = 3;
 function filtrarHistoria(run, ronda) {
-  valorar(run);
   const vivas = run.premisas.filter((p) => p.viva);
   if (vivas.length <= 2) return;
-  const candidatas = vivas.filter((p) => (p.jugadas ?? 0) > 1 || (p.contras ?? 0) > 0);
+  const candidatas = vivas.filter((p) => p.puntos.length > 1 || (p.puntos.length === 1 && p.puntos[0] <= NOTA_MUY_BAJA));
   const cuantas = Math.min(Math.ceil(vivas.length * (run.config.corte || 0.25)), vivas.length - 2);
-  const peores = candidatas.sort((a, b) => a.valor - b.valor).slice(0, cuantas);
+  const peores = candidatas.sort((a, b) => a.media - b.media).slice(0, cuantas);
   for (const p of peores) { p.viva = false; p.eliminadaEn = ronda.n; ronda.eliminadas.push(p.id); }
+}
+
+// Veredicto: las posturas de la versión con mejor nota media. En las incógnitas que esa versión no
+// toca, las de la siguiente mejor versión que sí las toca.
+function eleccion(run) {
+  const orden = run.premisas.filter((p) => p.viva && p.puntos.length).sort((a, b) => (b.media - a.media) || (b.puntos.length - a.puntos.length));
+  const lineasVer = [];
+  for (const i of indices(run)) {
+    const p = orden.find((x) => tiene(x, i));
+    if (p) lineasVer.push(`- ${run.huecos[i].pregunta} → ${relleno(run, p, i)}${p === orden[0] ? '' : ` (de «${p.titulo}»)`}`);
+  }
+  return { lineas: lineasVer, ganadora: orden[0]?.id ?? '' };
 }
 
 async function veredictoHistoria(run, ctx) {
   const { texto } = vistaViva(run, false);
+  const { lineas: elegidas, ganadora } = eleccion(run);
   const j = await iaJSON(run, ctx, {
     modelo: run.config.modelo, esfuerzo: esfuerzoDe(run, 99, true),
-    system: `Juego de predicción sobre una historia: estas son las IA que llegaron al final, con sus posturas y notas. Para cada incógnita elige la postura mejor parada, también entre las "sueltas": la menos contradicha y más apoyada por el texto; la nota de predicción solo desempata. Siempre una; avisa si va muy igualada. Nombra las IA por su título, nunca por su id. Solo JSON: {"ganadora":"id de la IA mejor parada","texto":""}
-"texto", en español llano y en tres líneas:
-Conclusión: … (cómo es la historia según lo mejor parado${run.pregunta ? '; responde a lo que se quería averiguar' : ''})
-Incógnitas:
-- ¿…? → postura elegida (una línea por incógnita; añade «por poco» si la ventaja es pequeña)
-Qué se salva de lo demás: …`,
-    prompt: [run.pregunta ? `Se quería averiguar: ${run.pregunta}` : '', texto].filter(Boolean).join('\n\n'),
+    system: `Juego de predicción sobre una historia: varias versiones, cada una con unas suposiciones, predijeron fragmento a fragmento cómo seguía. Te paso las que llegaron al final con su nota y las suposiciones de la mejor. Redacta en español llano dos líneas:
+- conclusion: cómo es la historia según la mejor versión${run.pregunta ? ', respondiendo a lo que se quería averiguar' : ''}.
+- salva: qué sigue valiendo de las demás versiones.
+Nombra las versiones por su título. Solo JSON: {"conclusion":"","salva":""}`,
+    prompt: [run.pregunta ? `Se quería averiguar: ${run.pregunta}` : '', `Suposiciones de la mejor versión:\n${elegidas.join('\n')}`, texto].filter(Boolean).join('\n\n'),
   });
-  run.ganadora = premisa(run, j.ganadora)?.viva ? j.ganadora : '';
-  // Pedirlo no basta: los ids internos se cambian por el título de cada IA.
-  run.veredicto = String(j.texto ?? '').trim().replace(/\[?\b(p\d+)\b\]?/g, (m, id) => (premisa(run, id) ? `«${premisa(run, id).titulo}»` : m));
+  // Pedirlo no basta: los ids internos se cambian por el título de cada versión.
+  const limpio = (t) => String(t ?? '').replace(/\s+/g, ' ').trim().replace(/\[?\b(p\d+)\b\]?/g, (m, id) => (premisa(run, id) ? `«${premisa(run, id).titulo}»` : m));
+  run.ganadora = ganadora;
+  run.veredicto = [`Conclusión: ${limpio(j.conclusion)}`, 'Incógnitas:', ...elegidas, `Qué se salva de lo demás: ${limpio(j.salva)}`].join('\n');
 }
