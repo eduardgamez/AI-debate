@@ -27,11 +27,19 @@ Entre ellas debaten en inglés; lo que lees sale en español.
 
 ## Modo historia
 
-Pegas una historia (escenas separadas con `---`, o se trocea sola). Cada combinación predice la siguiente escena y un auditor puntúa cuánto acertó. Solo sirve con historias que la IA no conozca.
+Solo sirve con historias que la IA no conozca.
+
+1. **Fragmentos.** Si separas la historia con `---`, se corta ahí. Si no, el árbitro la parte: cuanto más larga, más fragmentos, con cortes justo antes de cada giro.
+2. **Creador.** Lee la historia entera y elige incógnitas que aún no se saben y ayudan a predecir: sobre todo rasgos de personalidad y circunstancias personales. Cada una tiene varias posturas («¿tiene rasgos psicopáticos?»: no, leves, claros). Son rasgos ocultos, nunca hechos futuros, y solo de personajes que ya han aparecido.
+3. **Versiones.** Cada IA da por ciertas varias posturas. Pueden compartir alguna, pero cada versión va en una dirección distinta. Puedes editarlas antes de empezar.
+4. **Cada fragmento.** Cada IA predice lo que pasará. Se revela el fragmento, cada una defiende brevemente en qué acertó y el árbitro le pone nota del 1 al 10.
+5. **Filtro.** Cae la fracción peor puntuada (en el último fragmento ya no). En su primera ronda, una IA solo cae si saca 3 o menos. De las que caen no queda rastro.
+6. **Refuerzo.** El creador ve las IA en juego y la nota de cada postura, y mete IA nuevas (hasta las «IA a la vez» elegidas) con combinaciones prometedoras o incógnitas nuevas. No toca las que siguen. Una postura que cayó puede volver si vuelve a parecerle buena.
+7. **Veredicto.** Para cada incógnita, la postura mejor parada entre las que llegan al final. Nada queda abierto.
 
 ## Ajustes
 
-- Modelo y razonamiento de cada papel. Por defecto: creador Opus medio, debatientes Opus bajo, árbitro Haiku alto. La final puede subirse.
+- Modelo y razonamiento de cada papel. Por defecto: creador Opus medio, debatientes Opus bajo, árbitro Sonnet alto. La final puede subirse.
 - Intercambios por duelo: 3 por defecto. Es lo que más gasta.
 - Cuántas caen por ronda: 1 de cada 4, 1 de cada 3 o la mitad. Cuantas más caen, menos rondas y menos gasto.
 - Búsquedas en internet, solo cuando hacen falta.

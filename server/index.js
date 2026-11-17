@@ -100,9 +100,11 @@ const servidor = http.createServer(async (req, res) => {
           final: ['medium', 'high'].includes(c.final) ? c.final : '', // '' = igual que el resto
           corte: [0.25, 1 / 3, 0.5].includes(c.corte) ? c.corte : 0.25,
           intercambios: [1, 2, 3, 4].includes(c.intercambios) ? c.intercambios : 3,
+          ias: Number.isInteger(c.ias) ? Math.min(20, Math.max(2, c.ias)) : 8, // modo historia: IA a la vez
+          palabras: [150, 250, 400].includes(c.palabras) ? c.palabras : 250, // modo historia: largo de cada fragmento
           generadorModelo: MODELOS.includes(c.generadorModelo) ? c.generadorModelo : (MODELOS.includes(c.modelo) ? c.modelo : 'opus'),
           generadorEsfuerzo: ['low', 'medium', 'high'].includes(c.generadorEsfuerzo) ? c.generadorEsfuerzo : 'medium',
-          arbitro: MODELOS.includes(c.arbitro) ? c.arbitro : 'haiku',
+          arbitro: MODELOS.includes(c.arbitro) ? c.arbitro : 'sonnet',
           arbitroEsfuerzo: ['low', 'medium', 'high'].includes(c.arbitroEsfuerzo) ? c.arbitroEsfuerzo : 'high',
           web: c.web === true,
         },

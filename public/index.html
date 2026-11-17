@@ -18,6 +18,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   button, select, textarea, input { font: inherit; color: inherit; }
   .app { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
@@ -138,7 +139,7 @@ const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const NIVEL = { low: 'bajo', medium: 'medio', high: 'alto' };
 const MODELO = { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
 const EN_MARCHA = ['generando', 'compitiendo', 'veredicto'];
-const CAMPOS = ['corte', 'generadorModelo', 'modelo', 'generadorEsfuerzo', 'esfuerzo', 'final', 'intercambios', 'arbitro', 'arbitroEsfuerzo'];
+const CAMPOS = ['corte', 'generadorModelo', 'modelo', 'generadorEsfuerzo', 'esfuerzo', 'final', 'intercambios', 'arbitro', 'arbitroEsfuerzo', 'ias', 'palabras'];
 
 let lista = [];
 let run = null;        // competición abierta
@@ -186,7 +187,9 @@ function pintarInicio() {
   run = null; editorDe = null; fuente?.close(); fuente = null;
   history.replaceState(null, '', '#');
   pintarHistorial();
-  const g = (k, d) => localStorage.getItem(`aid-${k}`) ?? d;
+  // El árbitro por defecto pasó de Haiku a Sonnet: se olvida la elección guardada una vez.
+  try { if (!localStorage.getItem('aid-arbitro-v2')) { localStorage.removeItem('aid-arbitro'); localStorage.setItem('aid-arbitro-v2', '1'); } } catch {}
+  const g = (k, d) => { try { return localStorage.getItem(`aid-${k}`) ?? d; } catch { return d; } };
   $('#vista').innerHTML = `
     <div class="bienvenida"><h2>¿Qué ponemos a prueba?</h2><p>Se detecta lo que no se puede saber, se reparten posibles respuestas entre varias IA y se enfrentan para ver cuáles son más probables.</p></div>
     <form class="tarjeta" id="form">
@@ -194,39 +197,51 @@ function pintarInicio() {
       <div id="campos"></div>
       <div class="roles" role="table" aria-label="Qué modelo y cuánto razonamiento usa cada papel">
         <div class="cab" role="row"><span role="columnheader">Papel</span><span role="columnheader">Modelo</span><span role="columnheader">Razonamiento</span></div>
-        <div class="rol" role="row"><span role="cell"><b>Creador de premisas</b></span>
+        <div class="rol" role="row"><span role="cell"><b id="r-creador">Creador de premisas</b></span>
           <select name="generadorModelo" aria-label="Modelo del creador de premisas"><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>
           <select name="generadorEsfuerzo" aria-label="Razonamiento del creador de premisas"><option value="low">Bajo</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
-        <div class="rol" role="row"><span role="cell"><b>Debatientes</b></span>
+        <div class="rol" role="row"><span role="cell"><b id="r-deb">Debatientes</b></span>
           <select name="modelo" aria-label="Modelo de los debatientes"><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>
           <select name="esfuerzo" aria-label="Razonamiento de los debatientes"><option value="low">Bajo</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
-        <div class="rol" role="row"><span role="cell"><b>Ronda final y veredicto</b></span>
-          <span class="igual">El de los debatientes</span>
-          <select name="final" aria-label="Razonamiento en la ronda final"><option value="">Igual que los debatientes</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
-        <div class="rol" role="row"><span role="cell"><b>Árbitro</b></span>
+        <div class="rol" role="row"><span role="cell"><b id="r-final">Ronda final y veredicto</b></span>
+          <span class="igual" id="r-igual">El de los debatientes</span>
+          <select name="final" aria-label="Razonamiento en la ronda final"><option value="" id="r-igual2">Igual que los debatientes</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
+        <div class="rol" role="row"><span role="cell"><b>Árbitro</b><small id="r-arb"></small></span>
           <select name="arbitro" aria-label="Modelo del árbitro"><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>
           <select name="arbitroEsfuerzo" aria-label="Razonamiento del árbitro"><option value="low">Bajo</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
       </div>
       <div class="ajustes">
         <label>Caen por ronda <select name="corte"><option value="0.25">1 de cada 4</option><option value="0.3333333333333333">1 de cada 3</option><option value="0.5">La mitad</option></select></label>
         <label id="lint">Intercambios por duelo <select name="intercambios"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+        <label class="solo-historia">IA a la vez <input type="number" name="ias" min="2" max="20" value="8" style="width:64px"></label>
+        <label class="solo-historia">Fragmentos <select name="palabras"><option value="150">Cortos (~150 palabras)</option><option value="250" selected>Medios (~250)</option><option value="400">Largos (~400)</option></select></label>
         <label id="lweb"><input type="checkbox" name="web"> Permitir búsquedas en internet</label>
-        <span class="fin"><button class="boton principal">Generar premisas</button></span>
+        <span class="fin"><button class="boton principal" id="generar">Generar premisas</button></span>
       </div>
+      <p class="nota solo-historia"><b>Caen por ronda:</b> cuántas IA se descartan tras cada fragmento. <b>IA a la vez:</b> cuántas versiones juegan; el creador repone las que caen. <b>Fragmentos:</b> su largo, si no los marcas tú con ---. Más IA o fragmentos más cortos: más precisión y más gasto.</p>
       <p class="nota error" id="aviso" hidden></p>
     </form>`;
   const f = $('#form');
-  Object.assign(f.intercambios, { value: '3' }); f.generadorEsfuerzo.value = 'medium'; f.arbitro.value = 'haiku'; f.arbitroEsfuerzo.value = 'high';
-  for (const k of CAMPOS) { const v = g(k, f[k].value); if ([...f[k].options].some((o) => o.value === v)) f[k].value = v; }
+  Object.assign(f.intercambios, { value: '3' }); f.generadorEsfuerzo.value = 'medium'; f.arbitro.value = 'sonnet'; f.arbitroEsfuerzo.value = 'high';
+  for (const k of CAMPOS) { const v = g(k, f[k].value); if (!f[k].options || [...f[k].options].some((o) => o.value === v)) f[k].value = v; }
   f.web.checked = g('web', '1') === '1';
   pintarCampos();
 }
 function pintarCampos() {
   for (const b of document.querySelectorAll('.modos button')) b.classList.toggle('activo', b.dataset.modo === modo);
   $('#lweb').hidden = $('#lint').hidden = modo !== 'debate';
+  for (const el of document.querySelectorAll('.solo-historia')) el.hidden = modo !== 'historia';
+  const h = modo === 'historia';
+  $('#r-creador').textContent = h ? 'Creador (lee la historia entera)' : 'Creador de premisas';
+  $('#r-deb').textContent = h ? 'Predictores' : 'Debatientes';
+  $('#r-final').textContent = h ? 'Último fragmento y veredicto' : 'Ronda final y veredicto';
+  $('#r-igual').textContent = h ? 'El de los predictores' : 'El de los debatientes';
+  $('#r-igual2').textContent = h ? 'Igual que los predictores' : 'Igual que los debatientes';
+  $('#r-arb').textContent = h ? 'También parte la historia en fragmentos' : '';
+  $('#generar').textContent = h ? 'Preparar la historia' : 'Generar premisas';
   $('#campos').innerHTML = modo === 'debate'
     ? '<textarea name="pregunta" rows="4" placeholder="Escribe la cuestión que quieres poner a debate…" autofocus></textarea>'
-    : `<textarea name="historia" rows="9" placeholder="Pega aquí la historia. Separa las escenas con una línea --- o deja que se trocee sola."></textarea>
+    : `<textarea name="historia" rows="9" placeholder="Pega aquí la historia. Si quieres decidir tú los cortes, separa los fragmentos con una línea ---; si no, se parte sola."></textarea>
        <input type="text" name="pregunta" placeholder="¿Qué quieres averiguar? (opcional)" style="margin-top:8px">
        <p class="nota">Funciona con historias propias o poco conocidas: si el modelo ya conoce el final, las predicciones no valen.</p>`;
 }
@@ -261,15 +276,16 @@ function pintarRun() {
   const cerrados = new Set([...document.querySelectorAll('details:not([open])')].map((d) => d.dataset.k));
   const marcha = EN_MARCHA.includes(run.estado);
   const c = run.config;
-  let h = `<div class="pregunta">${esc(run.modo === 'debate' ? run.pregunta : (run.pregunta ? `${run.pregunta}\n\n` : '') + `Historia en ${run.escenas.length || '…'} escenas`)}</div>`;
+  const historia = run.modo === 'historia';
+  let h = `<div class="pregunta">${esc(run.modo === 'debate' ? run.pregunta : (run.pregunta ? `${run.pregunta}\n\n` : '') + `Historia en ${run.escenas.length || '…'} fragmentos`)}</div>`;
 
   h += '<div class="estado">';
   if (marcha) h += `<span class="giro"></span><span>${esc(run.actividad || 'Trabajando…')}</span>`;
   else if (run.estado === 'error') h += `<span class="error">Se ha parado: ${esc(run.error)}</span>`;
   else if (run.estado === 'detenido') h += '<span>Detenido.</span>';
-  else if (run.estado === 'revision') h += '<span>Revisa los huecos y cómo se reparten sus rellenos: puedes cambiar, quitar o añadir combinaciones.</span>';
+  else if (run.estado === 'revision') h += historia ? '<span>Revisa las incógnitas y la versión que defenderá cada IA: puedes cambiar posturas, quitar o añadir IA.</span>' : '<span>Revisa los huecos y cómo se reparten sus rellenos: puedes cambiar, quitar o añadir combinaciones.</span>';
   else h += '<span>Terminado.</span>';
-  h += `<span class="sep"></span><span class="chip">Premisas: ${MODELO[c.generadorModelo ?? c.modelo]} ${NIVEL[c.generadorEsfuerzo] ?? 'medio'} · Debate: ${MODELO[c.modelo]} ${c.esfuerzo === 'auto' ? 'bajo y luego medio' : NIVEL[c.esfuerzo]}${c.final ? ` (final ${NIVEL[c.final]})` : ''} · Árbitro: ${MODELO[c.arbitro]} ${NIVEL[c.arbitroEsfuerzo] ?? 'alto'}${c.web ? ' · internet' : ''}${run.idioma ? ` · debaten en ${esc(run.idioma)}` : ''}</span>`;
+  h += `<span class="sep"></span><span class="chip">Premisas: ${MODELO[c.generadorModelo ?? c.modelo]} ${NIVEL[c.generadorEsfuerzo] ?? 'medio'} · ${historia ? 'Predicción' : 'Debate'}: ${MODELO[c.modelo]} ${c.esfuerzo === 'auto' ? 'bajo y luego medio' : NIVEL[c.esfuerzo]}${c.final ? ` (final ${NIVEL[c.final]})` : ''} · Árbitro: ${MODELO[c.arbitro]} ${NIVEL[c.arbitroEsfuerzo] ?? 'alto'}${c.web && !historia ? ' · internet' : ''}${historia && c.ias ? ` · ${c.ias} IA a la vez` : ''}${run.idioma ? ` · ${historia ? 'predicen' : 'debaten'} en ${esc(run.idioma)}` : ''}</span>`;
   if (marcha) h += '<button class="boton mini" data-accion="detener">Detener</button>';
   if (['error', 'detenido'].includes(run.estado)) h += '<button class="boton mini" data-accion="continuar">Continuar</button>';
   if (!marcha) h += '<button class="boton mini" data-accion="borrar">Borrar</button>';
@@ -277,14 +293,14 @@ function pintarRun() {
 
   if (run.estado === 'revision') {
     editorDe = run.id;
-    h += `${panelHuecos()}<h2>Combinaciones que van a competir (${run.premisas.length}) · un relleno por hueco</h2><div class="tarjeta"><div id="editor">${run.premisas.map((p) => filaEditable(p)).join('')}</div>
-      <div class="pie"><button class="boton" data-accion="anadir">+ Añadir combinación</button><button class="boton principal" data-accion="empezar">Empezar la competición</button></div>
+    h += `${panelHuecos()}<h2>${historia ? `IA que van a jugar (${run.premisas.length}) · su postura en cada incógnita` : `Combinaciones que van a competir (${run.premisas.length}) · un relleno por hueco`}</h2><div class="tarjeta"><div id="editor">${run.premisas.map((p) => filaEditable(p)).join('')}</div>
+      <div class="pie"><button class="boton" data-accion="anadir">+ Añadir ${historia ? 'IA' : 'combinación'}</button><button class="boton principal" data-accion="empezar">Empezar ${historia ? 'el juego' : 'la competición'}</button></div>
       <p class="nota error" id="aviso" hidden></p></div>`;
   } else if (run.premisas.length) {
     const orden = [...run.premisas].sort((a, b) => (b.viva - a.viva) || ((b.eliminadaEn ?? 0) - (a.eliminadaEn ?? 0)) || ((b.media ?? -1) - (a.media ?? -1)));
-    h += `${panelHuecos()}<h2>Combinaciones</h2><div class="tarjeta">${orden.map((p) => `
+    h += `${panelHuecos()}<h2>${historia ? 'IA' : 'Combinaciones'}</h2><div class="tarjeta">${orden.map((p) => `
       <div class="premisa ${p.viva ? '' : 'caida'}">
-        <div><span class="tit">${esc(p.titulo)}</span>${run.ganadora === p.id ? '<span class="etq gana">mejor parada</span>' : ''}${p.viva ? '' : `<span class="etq">cayó en la ronda ${p.eliminadaEn}</span>`}</div>
+        <div><span class="tit">${esc(p.titulo)}</span>${run.ganadora === p.id ? '<span class="etq gana">mejor parada</span>' : ''}${historia && p.nacio > 1 ? `<span class="etq">entró en el fragmento ${p.nacio + 1}</span>` : ''}${p.viva ? '' : `<span class="etq">${historia ? `cayó en el fragmento ${p.eliminadaEn + 1}` : `cayó en la ronda ${p.eliminadaEn}`}</span>`}</div>
         <div class="nota-num">${nota(p.media)}</div>
         <div class="tes">${esc(lineasDe(p))}</div>
         <div class="pista"><i style="width:${(p.media ?? 0) * 10}%"></i></div>
@@ -292,20 +308,23 @@ function pintarRun() {
   }
 
   for (const r of run.rondas) {
-    const nombre = run.modo === 'historia' ? `Escena ${r.n + 1} de ${run.escenas.length}` : r.final ? 'Duelo final' : `Ronda ${r.n}`;
+    const nombre = historia ? `Fragmento ${r.n + 1} de ${run.escenas.length}` : r.final ? 'Duelo final' : `Ronda ${r.n}`;
     h += `<h2>${nombre} · razonamiento ${NIVEL[r.esfuerzo]}</h2><div>`;
-    if (run.modo === 'debate') {
+    if (!historia) {
       r.duelos.forEach((d, i) => { h += pintarDuelo(r, d, i); });
     } else {
-      h += `<details data-k="e${r.n}"><summary><span class="lados" style="display:block">Lo que pasó de verdad</span><span class="etq">${r.hecha ? 'ver' : 'oculto hasta auditar'}</span></summary><div class="cuerpo"><div class="escena">${r.hecha ? esc(run.escenas[r.n]) : 'Se muestra cuando termina la auditoría.'}</div></div></details>`;
+      const visto = r.revelada || r.hecha;
+      h += `<details data-k="e${r.n}"><summary><span class="lados" style="display:block">Lo que pasó de verdad</span><span class="etq">${visto ? 'ver' : 'oculto hasta que todas predigan'}</span></summary><div class="cuerpo"><div class="escena">${visto ? esc(run.escenas[r.n]) : 'Se muestra cuando todas han hecho su predicción.'}</div></div></details>`;
       h += `<div class="tarjeta" style="margin-top:8px;display:flex;flex-direction:column;gap:8px">${r.predicciones.map((pr, i) => `
         <div class="pred" ${i ? '' : 'style="border-top:0;padding-top:0"'}><b>${esc(titulo(pr.id))}</b><b>${pr.puntos ?? '…'}</b>
         <div>${pr.texto ? esc(pr.texto) : '<span class="motivo">Prediciendo…</span>'}</div><span></span>
-        ${pr.motivo ? `<div class="motivo">Auditor: ${esc(pr.motivo)}</div>` : ''}</div>`).join('')}</div>`;
+        ${pr.defensa ? `<div class="motivo">Defensa: ${esc(pr.defensa)}</div><span></span>` : ''}
+        ${pr.motivo ? `<div class="motivo">Árbitro: ${esc(pr.motivo)}</div>` : ''}</div>`).join('')}</div>`;
     }
     const info = [];
     if (r.descansa) info.push(`Descansa: ${esc(titulo(r.descansa))}`);
     if (r.eliminadas.length) info.push(`Caen: ${r.eliminadas.map((id) => esc(titulo(id))).join(', ')}`);
+    if (r.entran?.length) info.push(`Entran: ${r.entran.map((id) => esc(titulo(id))).join(', ')}`);
     h += `${info.length ? `<p class="ronda-info">${info.join(' · ')}</p>` : ''}</div>`;
   }
 
@@ -339,18 +358,29 @@ function pintarDuelo(r, d, i) {
 
 const huecos = () => run.huecos ?? [];
 const rellenoDe = (p, i) => huecos()[i]?.rellenos[p?.elige?.[i]] ?? '';
-const lineasDe = (p) => (p.elige ? huecos().map((hu, i) => `${hu.pregunta} → ${rellenoDe(p, i)}`).join('\n') : (p.contenido ?? ''));
+const tiene = (p, i) => p?.elige?.[i] !== null && p?.elige?.[i] !== undefined;
+const lineasDe = (p) => (p.elige ? huecos().map((hu, i) => (tiene(p, i) ? `${hu.pregunta} → ${rellenoDe(p, i)}` : '')).filter(Boolean).join('\n') : (p.contenido ?? ''));
 const mediaDe = (xs) => (xs?.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 function panelHuecos() {
   if (!huecos().length) return '';
   const sab = run.sabido?.length ? `<div class="punto"><b>Lo que se da por sabido</b><ul>${run.sabido.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></div>` : '';
-  const hs = huecos().map((hu) => `<div class="punto"><b>${esc(hu.pregunta)}</b><ol>${hu.rellenos.map((r, k) => {
-    const m = mediaDe(hu.notas?.[k]);
-    return `<li>${esc(r)}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
-  }).join('')}</ol></div>`).join('');
-  return `<details data-k="pc" ${['revision', 'terminado'].includes(run.estado) ? 'open' : ''}><summary><span class="lados" style="display:block">Huecos de información (${huecos().length}) y sus posibles rellenos</span></summary><div class="cuerpo"><div>${sab}${hs}</div></div></details>`;
+  // En historia solo se muestra lo que llevan las IA que siguen en juego.
+  const enJuego = (i, k) => run.modo !== 'historia' || run.estado === 'revision' || run.premisas.some((p) => p.viva && p.elige?.[i] === k);
+  const hs = huecos().map((hu, i) => {
+    const ks = hu.rellenos.map((_, k) => k).filter((k) => enJuego(i, k));
+    if (!ks.length) return '';
+    return `<div class="punto"><b>${esc(hu.pregunta)}</b><ol>${ks.map((k) => {
+      const m = mediaDe(hu.notas?.[k]);
+      return `<li>${esc(hu.rellenos[k])}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
+    }).join('')}</ol></div>`;
+  }).join('');
+  return `<details data-k="pc" ${['revision', 'terminado'].includes(run.estado) ? 'open' : ''}><summary><span class="lados" style="display:block">${run.modo === 'historia' ? 'Incógnitas en juego y sus posturas · nota media de las IA que la llevan' : `Huecos de información (${huecos().length}) y sus posibles rellenos`}</span></summary><div class="cuerpo"><div>${sab}${hs}</div></div></details>`;
 }
-const filaEditable = (p = { titulo: '', elige: [] }) => `<div class="edita"><input type="text" value="${esc(p.titulo)}" placeholder="Título corto"><button class="boton mini" data-accion="quitar" title="Quitar">✕</button><div class="elige">${huecos().map((hu, i) => `<label><span>${esc(hu.pregunta)}</span><select>${hu.rellenos.map((r, k) => `<option value="${k}" ${k === (p.elige?.[i] ?? 0) ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>`).join('')}</div></div>`;
+function filaEditable(p = { titulo: '', elige: [] }) {
+  const parcial = run.modo === 'historia';
+  const elegido = (i) => (parcial && p.titulo ? p.elige?.[i] ?? null : p.elige?.[i] ?? 0); // una IA nueva empieza con postura en todo
+  return `<div class="edita"><input type="text" value="${esc(p.titulo)}" placeholder="Título corto"><button class="boton mini" data-accion="quitar" title="Quitar">✕</button><div class="elige">${huecos().map((hu, i) => `<label><span>${esc(hu.pregunta)}</span><select>${parcial ? `<option value="" ${elegido(i) === null ? 'selected' : ''}>— sin postura —</option>` : ''}${hu.rellenos.map((r, k) => `<option value="${k}" ${k === elegido(i) ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>`).join('')}</div></div>`;
+}
 
 // ---------- Acciones ----------
 
@@ -367,7 +397,7 @@ document.addEventListener('click', async (e) => {
     if (accion === 'quitar') return b.closest('.edita').remove();
     if (accion === 'anadir') { $('#editor').insertAdjacentHTML('beforeend', filaEditable()); return $('#editor').lastElementChild.querySelector('input').focus(); }
     if (accion === 'empezar') {
-      const premisas = [...document.querySelectorAll('#editor .edita')].map((f) => ({ titulo: f.querySelector('input').value, elige: [...f.querySelectorAll('select')].map((s) => Number(s.value)) }));
+      const premisas = [...document.querySelectorAll('#editor .edita')].map((f) => ({ titulo: f.querySelector('input').value, elige: [...f.querySelectorAll('select')].map((s) => (s.value === '' ? null : Number(s.value))) }));
       await api(`runs/${run.id}/empezar`, 'POST', { premisas });
       editorDe = null;
       return;
@@ -385,7 +415,7 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
-  const datos = { modo, pregunta: f.pregunta?.value ?? '', historia: f.historia?.value ?? '', modelo: f.modelo.value, esfuerzo: f.esfuerzo.value, generadorModelo: f.generadorModelo.value, generadorEsfuerzo: f.generadorEsfuerzo.value, arbitro: f.arbitro.value, arbitroEsfuerzo: f.arbitroEsfuerzo.value, final: f.final.value, intercambios: Number(f.intercambios.value), corte: Number(f.corte.value), web: f.web.checked };
+  const datos = { modo, pregunta: f.pregunta?.value ?? '', historia: f.historia?.value ?? '', modelo: f.modelo.value, esfuerzo: f.esfuerzo.value, generadorModelo: f.generadorModelo.value, generadorEsfuerzo: f.generadorEsfuerzo.value, arbitro: f.arbitro.value, arbitroEsfuerzo: f.arbitroEsfuerzo.value, final: f.final.value, intercambios: Number(f.intercambios.value), ias: Number(f.ias.value), palabras: Number(f.palabras.value), corte: Number(f.corte.value), web: f.web.checked };
   for (const k of CAMPOS) localStorage.setItem(`aid-${k}`, datos[k]);
   localStorage.setItem('aid-web', datos.web ? '1' : '0');
   try {

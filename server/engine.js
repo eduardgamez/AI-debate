@@ -11,6 +11,11 @@ import { preguntar, preguntarJSON } from './claude.js';
 const breve = (idioma) => `Escribe en ${idioma} y en texto plano (sin markdown). Sé tan breve como el contenido permita: cada frase debe aportar algo nuevo. Sin saludos, sin relleno y sin repetir lo ya dicho.`;
 const interno = (run) => breve(run.idioma || 'inglés');
 const MAX_COMBINACIONES = 12;
+// Modo historia: cuántas IA juegan a la vez como mucho, y topes de incógnitas y posturas.
+const TOPE_HISTORIA = 8; // por defecto; se elige en el menú
+const tope = (run) => run.config.ias || TOPE_HISTORIA;
+const MAX_HUECOS_HISTORIA = 16;
+const MAX_POSTURAS = 6;
 const MAX_HUECOS = 8;
 const MAX_RELLENOS = 4;
 // Hasta este tamaño (en caracteres, ~10.000 palabras) todos leen la conversación entera del duelo;
@@ -24,7 +29,9 @@ const lista = (x) => (Array.isArray(x) ? x.map((s) => String(s).trim()).filter(B
 const indices = (run) => run.huecos.map((_, i) => i);
 
 const relleno = (run, p, i) => run.huecos[i].rellenos[p.elige[i]];
-const lineas = (run, p, cuales = indices(run)) => cuales.map((i) => `· ${run.huecos[i].pregunta} → ${relleno(run, p, i)}`).join('\n');
+// En el modo historia una IA puede no tener postura en algún hueco (elige[i] === null).
+const tiene = (p, i) => p.elige[i] !== null && p.elige[i] !== undefined;
+const lineas = (run, p, cuales = indices(run)) => cuales.filter((i) => tiene(p, i)).map((i) => `· ${run.huecos[i].pregunta} → ${relleno(run, p, i)}`).join('\n');
 const cita = (run, p) => `«${p.titulo}»\n${lineas(run, p)}`;
 const difieren = (run, a, b) => indices(run).filter((i) => a.elige[i] !== b.elige[i]);
 const sabido = (run) => (run.sabido?.length ? `Datos de partida que no se discuten:\n- ${run.sabido.join('\n- ')}` : '');
@@ -41,31 +48,38 @@ const ia = (run, ctx, o) => preguntar({ ...o, signal: ctx.signal, uso: run.uso }
 const iaJSON = (run, ctx, o) => preguntarJSON({ ...o, signal: ctx.signal, uso: run.uso });
 
 // Fija las combinaciones que van a competir (las del generador o las editadas por el usuario).
-// `elige` va en base 0. Devuelve un mensaje de error o ''.
+// `elige` va en base 0; en el modo historia, null = sin postura en ese hueco. Devuelve un mensaje de error o ''.
 export function fijarCombinaciones(run, combinaciones) {
+  const parcial = run.modo === 'historia';
+  const maximo = parcial ? tope(run) : MAX_COMBINACIONES;
   run.premisas = [];
   const vistas = new Set();
   for (const c of Array.isArray(combinaciones) ? combinaciones : []) {
     const titulo = String(c?.titulo ?? '').trim().slice(0, 120);
     if (!titulo) continue;
-    const elige = run.huecos.map((h, i) => limitar(c?.elige?.[i], 0, h.rellenos.length - 1));
-    const clave = elige.join(',');
+    const elige = run.huecos.map((h, i) => {
+      const v = c?.elige?.[i];
+      if (parcial && (v === null || v === undefined || v === '' || Number(v) < 0)) return null;
+      return limitar(v, 0, h.rellenos.length - 1);
+    });
+    if (elige.every((v) => v === null)) continue;
+    const clave = elige.map((v) => v ?? '-').join(',');
     if (vistas.has(clave)) continue; // dos combinaciones idénticas no tienen nada que discutir
     vistas.add(clave);
-    run.premisas.push({ id: `p${run.premisas.length + 1}`, titulo, elige, puntos: [], media: null, viva: true, eliminadaEn: null, notas: [] });
-    if (run.premisas.length === MAX_COMBINACIONES) break;
+    run.premisas.push(nuevaPremisa(run, titulo, elige, 0));
+    if (run.premisas.length === maximo) break;
   }
   return run.premisas.length < 2 ? 'Hacen falta al menos dos combinaciones distintas.' : '';
 }
+const nuevaPremisa = (run, titulo, elige, nacio) => ({ id: `p${run.premisas.length + 1}`, titulo, elige, puntos: [], media: null, viva: true, eliminadaEn: null, nacio, notas: [] });
 
 // ---------- Huecos y combinaciones ----------
 
 export async function generarPremisas(run, ctx) {
   run.estado = 'generando';
-  if (run.modo === 'historia') await trocear(run, ctx);
+  if (run.modo === 'historia') return prepararHistoria(run, ctx);
   run.actividad = 'Buscando los huecos de información…';
   ctx.emit();
-  const debate = run.modo === 'debate';
   const reparto = `
 Después, REPARTO: forma combinaciones eligiendo un relleno de cada hueco. Cada combinación la defenderá una IA distinta, que tendrá que sostener todos sus rellenos a la vez. Las combinaciones no tienen que ser coherentes ni apuntar a ninguna respuesta: son solo un reparto de posiciones. Hazlo de forma inteligente, no una combinación por cada mezcla posible:
 - usa el menor número de combinaciones que dé al menos un defensor a cada relleno plausible;
@@ -76,18 +90,12 @@ Responde SOLO con JSON: {"idioma":"inglés","sabido":["dato ya establecido, en u
 "elige" tiene un número por hueco, en el mismo orden: el relleno escogido (1 = el primero).`;
   const huecos = `Un hueco cumple tres condiciones: (1) afecta a la respuesta, en la dirección que sea; (2) no se puede saber con seguridad ni razonando ni buscando en internet (intenciones, carácter o estado de ánimo de personas, cómo reaccionará alguien, qué pasará, circunstancias concretas del caso que no se han dicho, datos que no son públicos…); (3) admite varias respuestas plausibles. Verbaliza todos los que importen, también los indirectos o poco obvios. Lo que sí se puede averiguar NO es un hueco: averígualo y ponlo en "sabido".
 Formula cada hueco como una pregunta (como mucho ${MAX_HUECOS}) y da entre 2 y ${MAX_RELLENOS} rellenos: respuestas concretas a esa pregunta, incompatibles entre sí (si una es la real, las demás no) y todas plausibles. Un relleno nunca es una respuesta a la cuestión principal.`;
-  const system = debate
-    ? `Preparas un debate entre varias IA sobre una cuestión que no se puede responder con seguridad de primeras. Tu trabajo NO es responderla, sino detectar sus HUECOS DE INFORMACIÓN: lo que te falta saber para decidirte por una respuesta.
+  const system = `Preparas un debate entre varias IA sobre una cuestión que no se puede responder con seguridad de primeras. Tu trabajo NO es responderla, sino detectar sus HUECOS DE INFORMACIÓN: lo que te falta saber para decidirte por una respuesta.
 ${huecos}
-Ejemplo: ante «¿aceptará esta persona la negociación?», huecos posibles: «¿Es buena negociadora?», «¿Suelen aceptarse negociaciones de este tipo?», «¿Reacciona de forma irracional ante la presión?», «¿Qué humor tendrá ese día (descanso, tiempo, otros problemas)?». Rellenos del último: «de buen humor», «irritada o cansada», «indiferente».${run.config.web ? '\nBusca en internet lo que sí sea averiguable, para no convertirlo en hueco.' : ''}${reparto}`
-    : `Preparas un juego de predicción sobre una historia de la que solo se conoce el comienzo. Los HUECOS son las incógnitas de la historia que todavía no se pueden saber y que deciden cómo seguirá (motivaciones y carácter de los personajes, secretos, reglas de su mundo, tipo de relato…).
-${huecos}
-Cada combinación de rellenos servirá para predecir lo que pasará. Si reconoces la historia, no uses lo que sabes de ella.${reparto}`;
-  const prompt = debate
-    ? `Cuestión:\n${run.pregunta}`
-    : `${run.pregunta ? `Lo que se quiere averiguar: ${run.pregunta}\n\n` : ''}Comienzo de la historia:\n${run.escenas[0]}`;
+Ejemplo: ante «¿aceptará esta persona la negociación?», huecos posibles: «¿Es buena negociadora?», «¿Suelen aceptarse negociaciones de este tipo?», «¿Reacciona de forma irracional ante la presión?», «¿Qué humor tendrá ese día (descanso, tiempo, otros problemas)?». Rellenos del último: «de buen humor», «irritada o cansada», «indiferente».${run.config.web ? '\nBusca en internet lo que sí sea averiguable, para no convertirlo en hueco.' : ''}${reparto}`;
+  const prompt = `Cuestión:\n${run.pregunta}`;
   const r = await iaJSON(run, ctx, {
-    modelo: run.config.generadorModelo || run.config.modelo, esfuerzo: run.config.generadorEsfuerzo || 'medium', web: debate && run.config.web, system, prompt,
+    modelo: run.config.generadorModelo || run.config.modelo, esfuerzo: run.config.generadorEsfuerzo || 'medium', web: run.config.web, system, prompt,
     alBuscar: (q) => { run.actividad = `Buscando en internet: ${q.slice(0, 120)}`; ctx.emit(); },
   });
   run.idioma = /^[a-záéíóúñü ]{3,30}$/i.test(String(r.idioma ?? '').trim()) ? String(r.idioma).trim().toLowerCase() : 'inglés';
@@ -105,44 +113,6 @@ Cada combinación de rellenos servirá para predecir lo que pasará. Si reconoce
   run.estado = 'revision';
   run.actividad = '';
   ctx.emit();
-}
-
-async function trocear(run, ctx) {
-  if (run.escenas.length) return;
-  const texto = run.historia.trim();
-  const separador = /^\s*-{3,}\s*$/m;
-  let escenas;
-  if (separador.test(texto)) {
-    escenas = texto.split(separador);
-  } else {
-    let parrafos = texto.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
-    if (parrafos.length < 3) parrafos = texto.split(/\n/).map((s) => s.trim()).filter(Boolean);
-    if (parrafos.length <= 6) {
-      escenas = parrafos;
-    } else {
-      run.actividad = 'Troceando la historia en escenas…';
-      ctx.emit();
-      // Solo se envía el arranque de cada párrafo: basta para decidir los cortes y ahorra tokens.
-      const numerados = parrafos.map((p, i) => `[${i + 1}] ${p.slice(0, 160)}`).join('\n');
-      let inicios = [];
-      try {
-        const r = await iaJSON(run, ctx, {
-          ...arbitro(run),
-          system: 'Divides una historia en escenas para un juego de predicción. Recibes el comienzo de cada párrafo, numerado. Elige entre 4 y 10 puntos de corte, justo ANTES de giros, decisiones o desenlaces, para que lo que viene después de cada corte sea difícil de adivinar. Responde SOLO con JSON: {"inicios":[números de párrafo donde empieza cada escena]}',
-          prompt: numerados,
-        });
-        inicios = lista(r.inicios).map(Number).filter((n) => Number.isInteger(n) && n > 1 && n <= parrafos.length);
-      } catch (e) { if (ctx.signal.aborted) throw e; }
-      if (!inicios.length) {
-        const paso = Math.ceil(parrafos.length / 6);
-        for (let n = paso + 1; n <= parrafos.length; n += paso) inicios.push(n);
-      }
-      const cortes = [...new Set([1, ...inicios])].sort((a, b) => a - b);
-      escenas = cortes.map((c, i) => parrafos.slice(c - 1, (cortes[i + 1] ?? parrafos.length + 1) - 1).join('\n\n'));
-    }
-  }
-  run.escenas = escenas.map((s) => s.trim()).filter(Boolean);
-  if (run.escenas.length < 2) throw new Error('La historia necesita al menos dos escenas. Sepáralas con una línea "---" o pega un texto más largo.');
 }
 
 // ---------- Competición ----------
@@ -362,65 +332,17 @@ Responde SOLO con JSON:
   ctx.emit();
 }
 
-// ---------- Modo historia ----------
-
-async function historia(run, ctx) {
-  while (run.rondas.length < run.escenas.length - 1) {
-    const n = run.rondas.length + 1; // se predice la escena n (la 0 es el comienzo)
-    const vivas = run.premisas.filter((p) => p.viva);
-    const final = n === run.escenas.length - 1;
-    const ronda = { n, final, esfuerzo: esfuerzoDe(run, n, final), predicciones: vivas.map((p) => ({ id: p.id, texto: '', puntos: null, motivo: '' })), eliminadas: [], matices: [], hecha: false };
-    run.rondas.push(ronda);
-    run.actividad = `Prediciendo la escena ${n + 1} de ${run.escenas.length}…`;
-    ctx.emit();
-    const hastaAhora = run.escenas.slice(0, n).join('\n\n');
-    await Promise.all(ronda.predicciones.map(async (pr) => {
-      pr.texto = await ia(run, ctx, {
-        modelo: run.config.modelo, esfuerzo: ronda.esfuerzo,
-        system: `Predices cómo sigue una historia dando por ciertas SOLO estas respuestas a sus incógnitas:\n${lineas(run, premisa(run, pr.id))}\nDi qué ocurre en la siguiente escena, de forma concreta y comprobable, en 2 a 4 frases. Si reconoces la historia, no uses lo que sabes de ella. ${interno(run)}`,
-        prompt: `Historia hasta ahora:\n${hastaAhora}\n\n¿Qué ocurre a continuación?`,
-      });
-      ctx.emit();
-    }));
-    run.actividad = `Auditando las predicciones de la escena ${n + 1}…`;
-    ctx.emit();
-    const j = await iaJSON(run, ctx, {
-      ...arbitro(run),
-      system: `Eres el auditor imparcial de un juego de predicción. Compara cada predicción con lo que ocurre de verdad en la escena. Puntúa de 0 a 10 cuánto se acerca en lo esencial (hechos, decisiones, tono), no en los detalles de redacción. Responde SOLO con JSON:
-{"notas":[{"id":"","puntos":0,"motivo":"una frase"}],"matices":[]}
-Escribe motivo y matices en español.
-- matices: como mucho UNO, de 15 palabras como máximo, y solo si es un acierto parcial que cambiaría el veredicto final. Casi siempre vacío.`,
-      prompt: `Escena real:\n${run.escenas[n]}\n\nPredicciones:\n${ronda.predicciones.map((pr) => `[${pr.id}] ${pr.texto}`).join('\n\n')}`,
-    });
-    const notas = Array.isArray(j.notas) ? j.notas : [];
-    for (const pr of ronda.predicciones) {
-      const nota = notas.find((x) => x?.id === pr.id);
-      pr.puntos = limitar(nota?.puntos, 0, 10);
-      pr.motivo = String(nota?.motivo ?? '');
-      const p = premisa(run, pr.id);
-      p.puntos.push(pr.puntos);
-      for (const i of indices(run)) run.huecos[i].notas[p.elige[i]].push(pr.puntos);
-    }
-    ronda.matices.push(...lista(j.matices).slice(0, 1));
-    guardarMatices(run, ronda.matices);
-    filtrar(run, ronda);
-    ronda.hecha = true;
-    ctx.emit();
-  }
-}
-
 // ---------- Veredicto ----------
 
 async function veredicto(run, ctx) {
   run.estado = 'veredicto';
   run.actividad = 'Redactando el veredicto final…';
   ctx.emit();
+  if (run.modo === 'historia') return veredictoHistoria(run, ctx);
   const fmt = (n) => (n === null ? 'sin discutir' : `${n.toFixed(1)}/10`);
   const huecos = run.huecos.map((h, i) => `[${i + 1}] ${h.pregunta}\n${h.rellenos.map((r, k) => `   - ${r}: ${fmt(media(h.notas[k]))}`).join('\n')}`).join('\n');
   const tabla = run.premisas.map((p) => `[${p.id}] «${p.titulo}» — media ${fmt(p.media)}, ${p.viva ? 'sigue en pie' : `cayó en la ronda ${p.eliminadaEn}`}`).join('\n');
-  const rondas = run.rondas.map((r) => (run.modo === 'debate'
-    ? r.duelos.map((d) => `Ronda ${r.n}${r.final ? ' (final)' : ''}: ${d.a} contra ${d.b}, ${d.puntosA}-${d.puntosB}. ${d.motivo}\n${d.resumen}`).join('\n\n')
-    : `Escena ${r.n + 1}: ${r.predicciones.map((pr) => `${pr.id}=${pr.puntos} (${pr.motivo})`).join('; ')}`)).join('\n\n');
+  const rondas = run.rondas.map((r) => r.duelos.map((d) => `Ronda ${r.n}${r.final ? ' (final)' : ''}: ${d.a} contra ${d.b}, ${d.puntosA}-${d.puntosB}. ${d.motivo}\n${d.resumen}`).join('\n\n')).join('\n\n');
   const j = await iaJSON(run, ctx, {
     modelo: run.config.modelo, esfuerzo: esfuerzoDe(run, 99, true),
     system: `Eres el juez final. La cuestión dependía de huecos de información que nadie puede comprobar; varias IA han discutido qué relleno de cada hueco es más probable. Con las puntuaciones de cada relleno y lo ocurrido en los duelos, di cuál es el relleno más probable de cada hueco (o si sigue muy igualado) y qué respuesta a la cuestión se sigue de ellos. Sin "el ganador se lo lleva todo": recoge también lo que sigue siendo válido de lo demás. Responde SOLO con JSON: {"ganadora":"id de la combinación mejor parada, o \\"\\" si es un empate real","texto":""}
@@ -431,7 +353,7 @@ Qué se salva de lo demás: …
 Queda abierto: …
 ${breve('español')}`,
     prompt: [
-      run.modo === 'debate' ? `Cuestión: ${run.pregunta}` : `Juego de predicción sobre una historia.${run.pregunta ? ` Se quería averiguar: ${run.pregunta}` : ''}`,
+      `Cuestión: ${run.pregunta}`,
       sabido(run),
       `Huecos y puntuación de cada relleno:\n${huecos}`,
       `Combinaciones:\n${tabla}`,
@@ -440,5 +362,286 @@ ${breve('español')}`,
     ].filter(Boolean).join('\n\n'),
   });
   run.ganadora = premisa(run, j.ganadora) ? j.ganadora : '';
+  run.veredicto = String(j.texto ?? '').trim();
+}
+
+// ---------- Modo historia ----------
+// La historia se parte en fragmentos. Un creador que la ha leído entera elige INCÓGNITAS (lo que aún
+// no se sabe en el punto de lectura y ayuda a predecir) y reparte VERSIONES entre varias IA: cada una
+// da por ciertas unas posturas. Fragmento a fragmento, cada IA predice, defiende su predicción al
+// conocer lo que pasó y un árbitro la puntúa; caen las peores y el creador mete IA nuevas.
+// Ni el creador ni las IA saben nada de las que cayeron.
+
+const PALABRAS_POR_FRAGMENTO = 250; // por defecto; se elige en el menú
+const corto = (run) => `En ${run.idioma || 'inglés'}, texto plano.`;
+const MAX_FRAGMENTOS = 25;
+
+// Corta el texto en frases (y párrafos) sin perder nada: unir los trozos devuelve el texto original.
+function frases(texto) {
+  const cortes = [0, ...[...texto.matchAll(/[.!?…]+["'»”’)\]]*\s+|\n\s*\n/g)].map((m) => m.index + m[0].length), texto.length];
+  const trozos = [];
+  for (let i = 0; i < cortes.length - 1; i++) {
+    const t = texto.slice(cortes[i], cortes[i + 1]);
+    if (t.trim()) trozos.push(t); else if (trozos.length) trozos[trozos.length - 1] += t;
+  }
+  return trozos;
+}
+
+async function trocear(run, ctx) {
+  if (run.escenas.length) return;
+  const texto = run.historia.trim();
+  const separador = /^\s*-{3,}\s*$/m;
+  let escenas;
+  if (separador.test(texto)) {
+    escenas = texto.split(separador);
+  } else {
+    const unidades = frases(texto);
+    const palabras = texto.split(/\s+/).filter(Boolean).length;
+    const objetivo = Math.min(MAX_FRAGMENTOS, unidades.length, Math.max(3, Math.round(palabras / (run.config.palabras || PALABRAS_POR_FRAGMENTO))));
+    let inicios = [];
+    if (unidades.length > 1) {
+      run.actividad = 'Partiendo la historia en fragmentos…';
+      ctx.emit();
+      try {
+        const r = await iaJSON(run, ctx, {
+          ...arbitro(run),
+          system: `Parte esta historia (frases numeradas) en unos ${objetivo} fragmentos para un juego de adivinar cómo sigue. Corta a menudo, justo antes de cada giro, decisión, revelación o cambio de escena. Solo JSON: {"inicios":[nº de la frase que abre cada fragmento, salvo el primero]}`,
+          prompt: unidades.map((u, i) => `[${i + 1}] ${u.trim()}`).join('\n'),
+        });
+        inicios = (Array.isArray(r.inicios) ? r.inicios : []).map(Number).filter((n) => Number.isInteger(n) && n > 1 && n <= unidades.length);
+      } catch (e) { if (ctx.signal.aborted) throw e; }
+      if (!inicios.length) { // respaldo: trozos iguales
+        const paso = unidades.length / objetivo;
+        for (let k = 1; k < objetivo; k++) inicios.push(Math.round(k * paso) + 1);
+      }
+    }
+    const cortes = [...new Set([1, ...inicios])].sort((a, b) => a - b);
+    escenas = cortes.map((c, i) => unidades.slice(c - 1, (cortes[i + 1] ?? unidades.length + 1) - 1).join(''));
+  }
+  run.escenas = escenas.map((s) => s.trim()).filter(Boolean);
+  if (run.escenas.length < 2) throw new Error('La historia necesita al menos dos fragmentos. Sepáralos con una línea "---" o pega un texto más largo.');
+}
+
+const REGLAS_CREADOR = `Juego: varias IA leen una historia fragmento a fragmento y predicen el siguiente, cada una dando por ciertas unas posturas. Tú conoces la historia entera y eliges incógnitas y versiones.
+- Incógnita: pregunta no resuelta en lo leído que ayude a predecir. Sobre todo personalidad y circunstancias personales; también lo que la historia pida. Da igual si la historia la aclara alguna vez.
+- Posturas: respuestas incompatibles que cubren el abanico (p. ej. rasgos psicopáticos: no / leves / claros), todas igual de concretas para que ninguna destaque. Rasgos o circunstancias ocultas, nunca hechos futuros ni giros de la trama.
+- Solo personajes y elementos que ya han aparecido en lo leído.
+- Reparte las incógnitas entre los personajes que importan, no solo el protagonista. No abras una incógnita equivalente a otra en juego: usa la que hay.
+- Versión (una por IA): una dirección general con postura en las incógnitas que tocan esa dirección; las que no la tocan pueden quedar sin postura, si otras IA ya las cubren con posturas variadas. Pueden compartir posturas sueltas, no la dirección general. No favorezcas lo que sabes que es cierto.
+En español.`;
+
+const FORMATO_CREADOR = (extra = '') => `Solo JSON: {${extra}"huecos_nuevos":[{"clave":"N1","pregunta":"¿…?"}],"ias":[{"titulo":"3-6 palabras","posturas":[{"hueco":"N1","postura":"frase corta"}]}]}
+Una postura compartida se escribe igual en todas.`;
+
+// Toda la historia, con una marca en el punto hasta el que han leído las IA.
+const historiaMarcada = (run, n) => run.escenas.map((e, i) => `[Fragmento ${i + 1}]\n${e}${i === n ? '\n\n=== HASTA AQUÍ HAN LEÍDO ===' : ''}`).join('\n\n');
+
+// Lo que sigue en juego: solo las IA vivas y sus posturas. De lo eliminado no queda rastro.
+function vistaViva(run, claves = true) {
+  const vivas = run.premisas.filter((p) => p.viva);
+  const usados = indices(run).filter((i) => vivas.some((p) => tiene(p, i)));
+  const clave = (i) => `H${usados.indexOf(i) + 1}`;
+  const nombre = (i) => (claves ? clave(i) : run.huecos[i].pregunta);
+  const notaDe = (ms) => (ms.length ? `${media(ms).toFixed(1)} (${ms.length} IA)` : 'sin nota');
+  const huecos = usados.map((i) => {
+    const h = run.huecos[i];
+    const ks = [...new Set(vivas.filter((p) => tiene(p, i)).map((p) => p.elige[i]))];
+    return `${claves ? `${clave(i)}. ` : ''}${h.pregunta}\n${ks.map((k) => `   - ${h.rellenos[k]} — ${notaDe(vivas.filter((p) => p.elige[i] === k && p.media !== null).map((p) => p.media))}`).join('\n')}`;
+  }).join('\n');
+  const ias = vivas.map((p) => `[${p.id}] «${p.titulo}» — ${p.media === null ? 'sin nota' : `${p.media.toFixed(1)} en ${p.puntos.length} fragm.`}\n${usados.filter((i) => tiene(p, i)).map((i) => `   · ${nombre(i)} → ${relleno(run, p, i)}`).join('\n')}`).join('\n');
+  return {
+    mapa: new Map(usados.map((i) => [clave(i), i])),
+    texto: `Incógnitas (nota media de quienes llevan cada postura):\n${huecos}\n\nIA en juego:\n${ias}`,
+  };
+}
+
+// Mete en el juego las IA que propone el creador. Devuelve sus ids.
+function aplicarCreacion(run, r, mapa, cupo, nacio) {
+  const norma = (t) => String(t ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  for (const h of Array.isArray(r.huecos_nuevos) ? r.huecos_nuevos : []) {
+    const pregunta = String(h?.pregunta ?? '').trim();
+    const clave = String(h?.clave ?? '').trim().toUpperCase();
+    if (!pregunta || !clave) continue;
+    let i = run.huecos.findIndex((x) => norma(x.pregunta) === norma(pregunta));
+    if (i < 0) {
+      if (run.huecos.length >= MAX_HUECOS_HISTORIA) continue;
+      run.huecos.push({ pregunta, rellenos: [], notas: [] });
+      for (const p of run.premisas) p.elige.push(null);
+      i = run.huecos.length - 1;
+    }
+    mapa.set(clave, i);
+  }
+  const claveDe = (elige) => elige.map((v) => v ?? '-').join(',');
+  const vistas = new Set(run.premisas.filter((p) => p.viva).map((p) => claveDe(p.elige)));
+  const nuevas = [];
+  for (const ia of Array.isArray(r.ias) ? r.ias : []) {
+    if (nuevas.length >= cupo) break;
+    const titulo = String(ia?.titulo ?? '').trim().slice(0, 120);
+    if (!titulo) continue;
+    const elige = run.huecos.map(() => null);
+    for (const ps of Array.isArray(ia.posturas) ? ia.posturas : []) {
+      const i = mapa.get(String(ps?.hueco ?? '').trim().toUpperCase());
+      const texto = String(ps?.postura ?? '').trim();
+      if (i === undefined || !texto) continue;
+      const h = run.huecos[i];
+      let k = h.rellenos.findIndex((x) => norma(x) === norma(texto));
+      if (k < 0) {
+        if (h.rellenos.length >= MAX_POSTURAS) continue;
+        h.rellenos.push(texto);
+        h.notas.push([]);
+        k = h.rellenos.length - 1;
+      }
+      elige[i] = k;
+    }
+    if (elige.every((v) => v === null) || vistas.has(claveDe(elige))) continue;
+    vistas.add(claveDe(elige));
+    const p = nuevaPremisa(run, titulo, elige, nacio);
+    run.premisas.push(p);
+    nuevas.push(p.id);
+  }
+  return nuevas;
+}
+
+// Nota de cada postura: la media de las IA vivas que la llevan.
+function notasPorPostura(run) {
+  const vivas = run.premisas.filter((p) => p.viva && p.media !== null);
+  run.huecos.forEach((h, i) => { h.notas = h.rellenos.map((_, k) => vivas.filter((p) => p.elige[i] === k).map((p) => p.media)); });
+}
+
+const creador = (run) => ({ modelo: run.config.generadorModelo || run.config.modelo, esfuerzo: run.config.generadorEsfuerzo || 'medium' });
+
+async function prepararHistoria(run, ctx) {
+  await trocear(run, ctx);
+  run.actividad = 'El creador lee la historia y elige las incógnitas…';
+  ctx.emit();
+  const r = await iaJSON(run, ctx, {
+    ...creador(run),
+    system: `${REGLAS_CREADOR}
+Solo se ha leído el fragmento 1. Hasta 10 incógnitas y entre ${Math.min(4, tope(run))} y ${tope(run)} IA; cada postura con al menos un defensor. "idioma": el de las predicciones, inglés salvo razón clara.
+${FORMATO_CREADOR('"idioma":"inglés",')}`,
+    prompt: `${run.pregunta ? `Lo que se quiere averiguar: ${run.pregunta}\n\n` : ''}${historiaMarcada(run, 0)}`,
+  });
+  run.idioma = /^[a-záéíóúñü ]{3,30}$/i.test(String(r.idioma ?? '').trim()) ? String(r.idioma).trim().toLowerCase() : 'inglés';
+  run.sabido = [];
+  run.huecos = [];
+  run.premisas = [];
+  aplicarCreacion(run, r, new Map(), tope(run), 1);
+  // Fuera las incógnitas que ninguna IA ha llegado a usar.
+  const usados = indices(run).filter((i) => run.huecos[i].rellenos.length);
+  run.huecos = usados.map((i) => run.huecos[i]);
+  for (const p of run.premisas) p.elige = usados.map((i) => p.elige[i]);
+  if (run.premisas.length < 2) {
+    run.premisas = [];
+    throw new Error('El creador no ha podido montar al menos dos versiones distintas. Prueba otra vez.');
+  }
+  run.estado = 'revision';
+  run.actividad = '';
+  ctx.emit();
+}
+
+// Tras eliminar, el creador decide si entran IA nuevas (nunca toca las que siguen en juego).
+async function reforzar(run, ctx, ronda) {
+  const cupo = tope(run) - run.premisas.filter((p) => p.viva).length;
+  if (cupo > 0) {
+    run.actividad = 'El creador revisa las incógnitas y decide si entran IA nuevas…';
+    ctx.emit();
+    const { mapa, texto } = vistaViva(run);
+    const r = await iaJSON(run, ctx, {
+      ...creador(run),
+      system: `${REGLAS_CREADOR}
+Leídos ${ronda.n + 1} de ${run.escenas.length} fragmentos. Te paso las IA en juego (nota media 1-10 de sus predicciones). Mete hasta ${cupo} IA nuevas guiándote solo por las notas, nunca por lo que sabes del final: parte de las posturas mejor puntuadas, no recuperes direcciones con notas bajas y añade posturas o incógnitas nuevas si lo leído da pie. Normalmente llena el cupo. Claves: H1… existentes, N1… nuevas.
+${FORMATO_CREADOR()}`,
+      prompt: `${historiaMarcada(run, ronda.n)}\n\n${texto}`,
+    });
+    ronda.entran = aplicarCreacion(run, r, mapa, cupo, ronda.n + 1);
+    notasPorPostura(run);
+  }
+  ronda.creada = true;
+  ctx.emit();
+}
+
+async function historia(run, ctx) {
+  while (run.rondas.length < run.escenas.length - 1) {
+    const anterior = run.rondas.at(-1);
+    if (anterior && !anterior.creada) await reforzar(run, ctx, anterior);
+    const n = run.rondas.length + 1; // se predice el fragmento n (el 0 es el comienzo)
+    const vivas = run.premisas.filter((p) => p.viva);
+    const final = n === run.escenas.length - 1;
+    const ronda = { n, final, esfuerzo: esfuerzoDe(run, n, final), predicciones: vivas.map((p) => ({ id: p.id, texto: '', defensa: '', puntos: null, motivo: '' })), eliminadas: [], entran: [], revelada: false, creada: final, hecha: false };
+    run.rondas.push(ronda);
+    const real = run.escenas[n];
+    const palabras = Math.round(real.split(/\s+/).length / 10) * 10 || 10;
+    run.actividad = `Cada IA predice el fragmento ${n + 1} de ${run.escenas.length}…`;
+    ctx.emit();
+    const hastaAhora = run.escenas.slice(0, n).join('\n\n');
+    await Promise.all(ronda.predicciones.map(async (pr) => {
+      pr.texto = await ia(run, ctx, {
+        modelo: run.config.modelo, esfuerzo: ronda.esfuerzo,
+        system: `Predice en 2-4 frases concretas qué pasa en el siguiente fragmento (unas ${palabras} palabras) de esta historia, dando por ciertas estas suposiciones aunque no se mencionen:\n${lineas(run, premisa(run, pr.id))}\nMarcan cómo son y actúan los personajes, pero no tienen por qué salir a la luz ya: predice solo lo que pasa en este fragmento. No uses lo que sepas de la historia. Sin preámbulos. ${corto(run)}`,
+        prompt: hastaAhora,
+      });
+      ctx.emit();
+    }));
+
+    ronda.revelada = true;
+    run.actividad = `Se revela el fragmento ${n + 1}: cada IA defiende su predicción…`;
+    ctx.emit();
+    await Promise.all(ronda.predicciones.map(async (pr) => {
+      pr.defensa = await ia(run, ctx, {
+        modelo: run.config.modelo, esfuerzo: ronda.esfuerzo,
+        system: `Predijiste el siguiente fragmento de una historia antes de leerlo. Di en 1-3 frases en qué se parece al real, sin inventar ni cambiar lo dicho. ${corto(run)}`,
+        prompt: `Tu predicción:\n${pr.texto}\n\nFragmento real:\n${real}`,
+      });
+      ctx.emit();
+    }));
+
+    run.actividad = `El árbitro puntúa las predicciones del fragmento ${n + 1}…`;
+    ctx.emit();
+    const j = await iaJSON(run, ctx, {
+      ...arbitro(run),
+      system: `Puntúa de 1 a 10 cuánto se parece cada predicción al fragmento real en lo esencial (hechos, decisiones, intenciones, tono). La defensa, escrita después, solo señala coincidencias: no suma nada que la predicción no dijera. No atribuyas intenciones que el fragmento no muestre. Solo JSON: {"notas":[{"id":"","puntos":1,"motivo":"una frase en español"}]}`,
+      prompt: `Fragmento anterior:\n${run.escenas[n - 1]}\n\nFragmento real:\n${real}\n\n${ronda.predicciones.map((pr) => `[${pr.id}]\nPredicción: ${pr.texto}\nDefensa: ${pr.defensa}`).join('\n\n')}`,
+    });
+    const notas = Array.isArray(j.notas) ? j.notas : [];
+    for (const pr of ronda.predicciones) {
+      const nota = notas.find((x) => x?.id === pr.id);
+      if (!nota) continue; // sin nota no se castiga a nadie
+      pr.puntos = limitar(nota.puntos, 1, 10);
+      pr.motivo = String(nota.motivo ?? '');
+      premisa(run, pr.id).puntos.push(pr.puntos);
+    }
+    if (!final) filtrarHistoria(run, ronda); else for (const p of run.premisas) p.media = media(p.puntos);
+    notasPorPostura(run);
+    ronda.hecha = true;
+    ctx.emit();
+  }
+}
+
+// Como el filtro general, pero una IA en su primera ronda solo cae si su nota es muy baja:
+// una sola nota es poco fiable.
+const NOTA_MUY_BAJA = 3;
+function filtrarHistoria(run, ronda) {
+  for (const p of run.premisas) p.media = media(p.puntos);
+  const vivas = run.premisas.filter((p) => p.viva);
+  if (vivas.length <= 2) return;
+  const candidatas = vivas.filter((p) => p.puntos.length > 1 || (p.puntos.length === 1 && p.puntos[0] <= NOTA_MUY_BAJA));
+  const cuantas = Math.min(Math.ceil(vivas.length * (run.config.corte || 0.25)), vivas.length - 2);
+  const peores = candidatas.sort((a, b) => a.media - b.media).slice(0, cuantas);
+  for (const p of peores) { p.viva = false; p.eliminadaEn = ronda.n; ronda.eliminadas.push(p.id); }
+}
+
+async function veredictoHistoria(run, ctx) {
+  const { texto } = vistaViva(run, false);
+  const j = await iaJSON(run, ctx, {
+    modelo: run.config.modelo, esfuerzo: esfuerzoDe(run, 99, true),
+    system: `Juego de predicción sobre una historia: estas son las IA que llegaron al final, con sus posturas y notas. Para cada incógnita elige la postura mejor parada (siempre una; avisa si va muy igualada). Solo JSON: {"ganadora":"id de la IA mejor parada","texto":""}
+"texto", en español llano y en tres líneas:
+Conclusión: … (cómo es la historia según lo mejor parado${run.pregunta ? '; responde a lo que se quería averiguar' : ''})
+Incógnitas:
+- ¿…? → postura elegida (una línea por incógnita; añade «por poco» si la ventaja es pequeña)
+Qué se salva de lo demás: …`,
+    prompt: [run.pregunta ? `Se quería averiguar: ${run.pregunta}` : '', texto].filter(Boolean).join('\n\n'),
+  });
+  run.ganadora = premisa(run, j.ganadora)?.viva ? j.ganadora : '';
   run.veredicto = String(j.texto ?? '').trim();
 }
