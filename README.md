@@ -14,6 +14,8 @@ npm start
 
 Se abre `http://localhost:4747`.
 
+Cada competición recibe un título breve que pone Haiku según su contenido. En la barra lateral puedes renombrarla (✎) o borrarla (✕).
+
 ## Modo debate
 
 1. **Huecos.** Una IA detecta lo que no se puede saber y afecta a la respuesta (carácter de alguien, cómo reaccionará, circunstancias no dichas…). Lo averiguable lo da por sabido.
@@ -33,8 +35,8 @@ Solo sirve con historias que la IA no conozca.
 2. **Creador.** Lee la historia entera y elige incógnitas que aún no se saben y ayudan a predecir: sobre todo rasgos de personalidad y circunstancias personales. Cada una tiene varias posturas («¿tiene rasgos psicopáticos?»: no, leves, claros). Son rasgos ocultos, nunca hechos futuros, y solo de personajes que ya han aparecido.
 3. **Versiones.** Cada IA da por ciertas varias posturas. Pueden compartir alguna, pero cada versión va en una dirección distinta. Puedes editarlas antes de empezar.
 4. **Cada fragmento.** Cada IA predice lo que pasará. Se revela el fragmento, cada una defiende brevemente en qué acertó y el árbitro le pone nota del 1 al 10. Además, el árbitro marca cada postura como contradicha, apoyada o sin datos.
-5. **Filtro.** Cae la fracción peor parada (en el último fragmento ya no). Pesa sobre todo que el texto contradiga sus posturas (−3 cada vez); un apoyo suma poco (+1) y la nota de predicción solo desempata. Que el texto aún no diga nada no se castiga. En su primera ronda, una IA solo cae si el texto la contradice. De las que caen no queda rastro.
-6. **Refuerzo.** El creador ve las IA en juego y cómo le va a cada postura. Cuida que cada incógnita aún sin resolver tenga al menos dos posturas defendidas, y mete IA nuevas (hasta las «IA a la vez» elegidas) con combinaciones prometedoras o incógnitas nuevas. No toca las que siguen. Una postura que cayó puede volver si vuelve a parecerle buena.
+5. **Filtro.** Cae la fracción peor parada (en el último fragmento ya no). Pesa sobre todo que el texto contradiga sus posturas (−2 cada vez); un apoyo suma poco (+1) y la nota de predicción solo desempata. Que el texto aún no diga nada no se castiga. En su primera ronda, una IA solo cae si el texto la contradice. De las que caen no queda rastro.
+6. **Refuerzo.** El creador ve las IA en juego y cómo le va a cada postura. Cuida que cada incógnita aún sin resolver tenga al menos dos posturas defendidas, y mete IA nuevas (hasta las «IA a la vez» elegidas) con combinaciones prometedoras o incógnitas nuevas. No toca las que siguen. Las IA nuevas evitan lo que el texto ha contradicho (como mucho, en algún detalle menor). Las posturas que el texto respaldó siguen disponibles aunque caiga la IA que las llevaba: el creador puede recuperarlas y el juez puede elegirlas.
 7. **Veredicto.** Para cada incógnita, la postura mejor parada entre las que llegan al final. Nada queda abierto.
 
 ## Ajustes

@@ -440,7 +440,13 @@ const historiaMarcada = (run, n) => run.escenas.map((e, i) => `[Fragmento ${i + 
 // Lo que sigue en juego: solo las IA vivas y sus posturas. De lo eliminado no queda rastro.
 function vistaViva(run, claves = true) {
   const vivas = run.premisas.filter((p) => p.viva);
-  const usados = indices(run).filter((i) => vivas.some((p) => tiene(p, i)));
+  const posturasDe = (i) => [...new Set(vivas.filter((p) => tiene(p, i)).map((p) => p.elige[i]))];
+  // Posturas sueltas: apoyadas por el texto, nunca contradichas, que ya no lleva ninguna IA viva.
+  const sueltasDe = (i) => run.huecos[i].rellenos.map((_, k) => k).filter((k) => {
+    const e = evidencia(run.huecos[i], k);
+    return e.a > 0 && e.c === 0 && !posturasDe(i).includes(k);
+  });
+  const usados = indices(run).filter((i) => posturasDe(i).length || sueltasDe(i).length);
   const clave = (i) => `H${usados.indexOf(i) + 1}`;
   const nombre = (i) => (claves ? clave(i) : run.huecos[i].pregunta);
   const notaDe = (i, k) => {
@@ -448,12 +454,15 @@ function vistaViva(run, claves = true) {
     const ms = vivas.filter((p) => p.elige[i] === k && p.media !== null).map((p) => p.media);
     return `apoyada ${e.a}, contradicha ${e.c}${ms.length ? `; predicción ${media(ms).toFixed(1)}` : ''}`;
   };
-  const posturasDe = (i) => [...new Set(vivas.filter((p) => tiene(p, i)).map((p) => p.elige[i]))];
-  const huecos = usados.map((i) => `${claves ? `${clave(i)}. ` : ''}${run.huecos[i].pregunta}\n${posturasDe(i).map((k) => `   - ${run.huecos[i].rellenos[k]} — ${notaDe(i, k)}`).join('\n')}`).join('\n');
+  const huecos = usados.map((i) => `${claves ? `${clave(i)}. ` : ''}${run.huecos[i].pregunta}\n${[
+    ...posturasDe(i).map((k) => `   - ${run.huecos[i].rellenos[k]} — ${notaDe(i, k)}`),
+    ...sueltasDe(i).map((k) => `   - ${run.huecos[i].rellenos[k]} — ${notaDe(i, k)} (suelta: ninguna IA en juego la lleva)`),
+  ].join('\n')}`).join('\n');
   const ias = vivas.map((p) => `[${p.id}] «${p.titulo}» — ${p.jugadas ? `${p.contras ?? 0} contradicciones, ${p.apoyos ?? 0} apoyos en ${p.jugadas} fragm.; predicción ${p.media === null ? '–' : p.media.toFixed(1)}` : 'aún no ha jugado'}\n${usados.filter((i) => tiene(p, i)).map((i) => `   · ${nombre(i)} → ${relleno(run, p, i)}`).join('\n')}`).join('\n');
   return {
     mapa: new Map(usados.map((i) => [clave(i), i])),
-    solas: usados.filter((i) => posturasDe(i).length === 1).map(clave),
+    solas: usados.filter((i) => posturasDe(i).length + sueltasDe(i).length === 1).map(clave),
+    sueltas: usados.some((i) => sueltasDe(i).length),
     texto: `Incógnitas (veces que el texto ha apoyado o contradicho cada postura; nota media de predicción de quienes la llevan):\n${huecos}\n\nIA en juego:\n${ias}`,
   };
 }
@@ -488,8 +497,6 @@ function aplicarCreacion(run, r, mapa, cupo, nacio) {
       if (i === undefined || !texto) continue;
       const h = run.huecos[i];
       let k = h.rellenos.findIndex((x) => norma(x) === norma(texto));
-      // Una postura que vuelve sin nadie vivo que la lleve empieza de cero: no queda rastro de antes.
-      if (k >= 0 && !run.premisas.some((p) => p.viva && p.elige[i] === k)) evidencia(h, k).a = evidencia(h, k).c = 0;
       if (k < 0) {
         if (h.rellenos.length >= MAX_POSTURAS) continue;
         h.rellenos.push(texto);
@@ -552,11 +559,11 @@ async function reforzar(run, ctx, ronda) {
   if (cupo > 0) {
     run.actividad = 'El creador revisa las incógnitas y decide si entran IA nuevas…';
     ctx.emit();
-    const { mapa, texto, solas } = vistaViva(run);
+    const { mapa, texto, solas, sueltas } = vistaViva(run);
     const r = await iaJSON(run, ctx, {
       ...creador(run),
       system: `${REGLAS_CREADOR}
-Leídos ${ronda.n + 1} de ${run.escenas.length} fragmentos. Te paso las IA en juego y cómo les va. Mete hasta ${cupo} IA nuevas guiándote solo por lo que muestra el texto y las notas, nunca por lo que sabes del final: parte de las posturas apoyadas y no contradichas, no recuperes direcciones contradichas y añade posturas o incógnitas nuevas si lo leído da pie. Normalmente llena el cupo. Claves: H1… existentes, N1… nuevas.${solas.length ? `\nSolo tienen una postura defendida: ${solas.join(', ')}. Si lo leído no las resuelve, mete alguna IA con otra postura.` : ''}
+Leídos ${ronda.n + 1} de ${run.escenas.length} fragmentos. Te paso las IA en juego y cómo les va. Mete hasta ${cupo} IA nuevas guiándote solo por lo que muestra el texto y las notas, nunca por lo que sabes del final: parte de las posturas apoyadas y añade posturas o incógnitas nuevas si lo leído da pie. Evita lo contradicho por el texto: ninguna dirección debe ir por ahí, aunque arrastrarlo en un detalle menor no es grave.${sueltas ? ' Las posturas "sueltas" las respaldó el texto pero ya no las lleva nadie: recupéralas en IA nuevas.' : ''} Normalmente llena el cupo. Claves: H1… existentes, N1… nuevas.${solas.length ? `\nSolo tienen una postura defendida: ${solas.join(', ')}. Si lo leído no las resuelve, mete alguna IA con otra postura.` : ''}
 ${FORMATO_CREADOR()}`,
       prompt: `${historiaMarcada(run, ronda.n)}\n\n${texto}`,
     });
@@ -584,8 +591,8 @@ async function historia(run, ctx) {
     await Promise.all(ronda.predicciones.map(async (pr) => {
       pr.texto = await ia(run, ctx, {
         modelo: run.config.modelo, esfuerzo: ronda.esfuerzo,
-        system: `Predice en 2-4 frases concretas qué pasa en el siguiente fragmento (unas ${palabras} palabras) de esta historia, dando por ciertas estas suposiciones aunque no se mencionen:\n${lineas(run, premisa(run, pr.id))}\nMarcan cómo son y actúan los personajes, pero no tienen por qué salir a la luz ya: predice solo lo que pasa en este fragmento. No uses lo que sepas de la historia. Sin preámbulos. ${corto(run)}`,
-        prompt: hastaAhora,
+        system: `Predice en 2-4 frases concretas qué pasa en el siguiente fragmento (unas ${palabras} palabras) de esta historia, dando por ciertas estas suposiciones aunque no se mencionen:\n${lineas(run, premisa(run, pr.id))}\nMarcan cómo son y actúan los personajes, pero no tienen por qué salir a la luz ya: predice solo lo que pasa después de lo último leído, sin repetir nada ya contado. No uses lo que sepas de la historia. Sin preámbulos. ${corto(run)}`,
+        prompt: `${hastaAhora}\n\n=== Aquí termina lo leído. ¿Qué pasa a continuación? ===`,
       });
       ctx.emit();
     }));
@@ -651,9 +658,9 @@ No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"",
   }
 }
 
-// Lo que decide quién cae: cada contradicción del texto resta 3, cada apoyo suma 1 (por ronda
+// Lo que decide quién cae: cada contradicción del texto resta 2, cada apoyo suma 1 (por ronda
 // jugada) y la nota de predicción (0-1) solo desempata.
-const PESO_CONTRA = 3;
+const PESO_CONTRA = 2;
 const evidencia = (h, k) => { h.evid ??= []; return (h.evid[k] ??= { a: 0, c: 0 }); };
 function valorar(run) {
   for (const p of run.premisas) {
@@ -676,7 +683,7 @@ async function veredictoHistoria(run, ctx) {
   const { texto } = vistaViva(run, false);
   const j = await iaJSON(run, ctx, {
     modelo: run.config.modelo, esfuerzo: esfuerzoDe(run, 99, true),
-    system: `Juego de predicción sobre una historia: estas son las IA que llegaron al final, con sus posturas y notas. Para cada incógnita elige la postura mejor parada: la menos contradicha y más apoyada por el texto; la nota de predicción solo desempata. Siempre una; avisa si va muy igualada. Nombra las IA por su título, nunca por su id. Solo JSON: {"ganadora":"id de la IA mejor parada","texto":""}
+    system: `Juego de predicción sobre una historia: estas son las IA que llegaron al final, con sus posturas y notas. Para cada incógnita elige la postura mejor parada, también entre las "sueltas": la menos contradicha y más apoyada por el texto; la nota de predicción solo desempata. Siempre una; avisa si va muy igualada. Nombra las IA por su título, nunca por su id. Solo JSON: {"ganadora":"id de la IA mejor parada","texto":""}
 "texto", en español llano y en tres líneas:
 Conclusión: … (cómo es la historia según lo mejor parado${run.pregunta ? '; responde a lo que se quería averiguar' : ''})
 Incógnitas:

@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { limites, sesion } from './claude.js';
+import { limites, preguntar, sesion } from './claude.js';
 import { competir, fijarCombinaciones, generarPremisas } from './engine.js';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -29,7 +29,8 @@ for (const archivo of readdirSync(DATOS).filter((f) => f.endsWith('.json'))) {
 
 let estadoSesion = null;
 const vivo = (id) => { if (!vivos.has(id)) vivos.set(id, { ctrl: null, oyentes: new Set() }); return vivos.get(id); };
-const guardar = (run) => writeFileSync(join(DATOS, `${run.id}.json`), JSON.stringify(run));
+// Una competición borrada no se vuelve a escribir aunque aún le quede algo en marcha.
+const guardar = (run) => { if (runs.has(run.id)) writeFileSync(join(DATOS, `${run.id}.json`), JSON.stringify(run)); };
 const paquete = (run) => `data: ${JSON.stringify({ run, limites })}\n\n`;
 function emitir(run) {
   guardar(run);
@@ -50,6 +51,23 @@ function lanzar(run, fase) {
     run.actividad = '';
     emitir(run);
   }).finally(() => { if (v.ctrl === ctrl) v.ctrl = null; });
+}
+
+// Haiku pone un título muy breve según el contenido. Si falla, se queda el provisional;
+// si el usuario ya lo ha renombrado, no se toca.
+const limpiarTitulo = (t) => String(t ?? '').replace(/\s+/g, ' ').trim().replace(/^["'«“]+|["'»”.]+$/g, '').trim().slice(0, 70);
+async function titular(run) {
+  const contenido = run.modo === 'debate'
+    ? `Debate sobre: ${run.pregunta}`
+    : `Historia${run.pregunta ? ` (se quiere averiguar: ${run.pregunta})` : ''}:\n${run.historia.slice(0, 1500)}`;
+  try {
+    const t = limpiarTitulo(await preguntar({
+      modelo: 'haiku', esfuerzo: 'medium', uso: run.uso,
+      system: 'Pon un título muy breve (2 a 5 palabras) a este contenido, en español, sin comillas ni punto final. Responde solo con el título.',
+      prompt: contenido,
+    }));
+    if (t && !run.tituloManual && runs.has(run.id)) { run.titulo = t; emitir(run); }
+  } catch { /* se queda el título provisional */ }
 }
 
 function leerCuerpo(req) {
@@ -114,6 +132,7 @@ const servidor = http.createServer(async (req, res) => {
       runs.set(run.id, run);
       guardar(run);
       lanzar(run, generarPremisas);
+      titular(run);
       return json(res, 200, { id: run.id });
     }
 
@@ -147,9 +166,18 @@ const servidor = http.createServer(async (req, res) => {
       lanzar(run, run.premisas.length ? competir : generarPremisas);
       return json(res, 200, {});
     }
+    if (req.method === 'PATCH' && !accion) {
+      const titulo = limpiarTitulo((await leerCuerpo(req)).titulo);
+      if (!titulo) return json(res, 400, { error: 'Escribe un nombre.' });
+      run.titulo = titulo;
+      run.tituloManual = true;
+      emitir(run);
+      return json(res, 200, {});
+    }
     if (req.method === 'DELETE' && !accion) {
-      vivo(run.id).ctrl?.abort();
-      runs.delete(run.id);
+      runs.delete(run.id); // antes de abortar: lo que termine después ya no se guarda
+      vivos.get(run.id)?.ctrl?.abort();
+      vivos.delete(run.id);
       rmSync(join(DATOS, `${run.id}.json`), { force: true });
       return json(res, 200, {});
     }

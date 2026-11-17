@@ -26,10 +26,18 @@
   aside { border-right: 1px solid var(--borde); padding: 16px 12px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
   aside h1 { font-size: 17px; margin: 0 6px 4px; letter-spacing: -0.01em; }
   .hist { display: flex; flex-direction: column; gap: 2px; }
-  .hist button { all: unset; cursor: pointer; padding: 7px 8px; border-radius: 7px; font-size: 13.5px; color: var(--suave); display: flex; gap: 6px; align-items: baseline; }
-  .hist button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  .hist button:hover, .hist button.activo { background: var(--panel); color: var(--texto); }
+  .hist .item { display: flex; align-items: center; border-radius: 7px; color: var(--suave); }
+  .hist .item:hover, .hist .item.activo, .hist .item:focus-within { background: var(--panel); color: var(--texto); }
+  .hist .abrir { all: unset; cursor: pointer; padding: 7px 4px 7px 8px; font-size: 13.5px; display: flex; gap: 6px; align-items: baseline; flex: 1; min-width: 0; }
+  .hist .abrir span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .hist .abrir:focus-visible, .hist .acc:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; border-radius: 7px; }
   .hist small { font-size: 11px; opacity: .7; }
+  .hist .acc { all: unset; cursor: pointer; padding: 4px 5px; border-radius: 5px; font-size: 12px; line-height: 1; color: var(--suave); opacity: 0; }
+  .hist .acc:hover { color: var(--texto); background: var(--fondo); }
+  .hist .acc:last-child { margin-right: 4px; }
+  .hist .item:hover .acc, .hist .item:focus-within .acc { opacity: 1; }
+  @media (hover: none) { .hist .acc { opacity: 1; } }
+  .hist .renombra { flex: 1; min-width: 0; margin: 2px; padding: 5px 7px; font-size: 13.5px; }
   main { padding: 20px 16px 80px; min-width: 0; }
   .col { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
   .barra { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; min-height: 26px; }
@@ -174,8 +182,43 @@ function pintarLimites(sesion) {
   if (chips.length || sesion) $('#limites').innerHTML = chips.join('');
 }
 
+let renombrando = null; // id que se está renombrando: mientras tanto no se repinta la barra
 function pintarHistorial() {
-  $('#hist').innerHTML = lista.map((r) => `<button data-id="${r.id}" class="${run?.id === r.id ? 'activo' : ''}" title="${esc(r.titulo)}"><span>${esc(r.titulo)}</span><small>${r.modo === 'historia' ? 'historia' : ''}${EN_MARCHA.includes(r.estado) ? ' ●' : ''}</small></button>`).join('');
+  if (renombrando) return;
+  $('#hist').innerHTML = lista.map((r) => `<div class="item ${run?.id === r.id ? 'activo' : ''}" data-item="${r.id}">
+    <button class="abrir" data-id="${r.id}" title="${esc(r.titulo)}"><span>${esc(r.titulo)}</span><small>${r.modo === 'historia' ? 'historia' : ''}${EN_MARCHA.includes(r.estado) ? ' ●' : ''}</small></button>
+    <button class="acc" data-renombrar="${r.id}" title="Renombrar" aria-label="Renombrar «${esc(r.titulo)}»">✎</button>
+    <button class="acc" data-borrar="${r.id}" title="Borrar" aria-label="Borrar «${esc(r.titulo)}»">✕</button>
+  </div>`).join('');
+}
+function empezarRenombrar(id) {
+  const r = lista.find((x) => x.id === id);
+  const item = document.querySelector(`[data-item="${id}"]`);
+  if (!r || !item) return;
+  renombrando = id;
+  item.innerHTML = `<input type="text" class="renombra" value="${esc(r.titulo)}" maxlength="70" aria-label="Nuevo nombre">`;
+  const campo = item.querySelector('input');
+  campo.focus(); campo.select();
+  let hecho = false;
+  const terminar = async (guardar) => {
+    if (hecho) return;
+    hecho = true;
+    renombrando = null;
+    const nuevo = campo.value.replace(/\s+/g, ' ').trim();
+    if (guardar && nuevo && nuevo !== r.titulo) {
+      try { await api(`runs/${id}`, 'PATCH', { titulo: nuevo }); r.titulo = nuevo; } catch (error) { avisar(error.message); }
+    }
+    pintarHistorial();
+  };
+  campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); terminar(true); } if (e.key === 'Escape') terminar(false); });
+  campo.addEventListener('blur', () => terminar(true));
+}
+async function borrarRun(id) {
+  const r = lista.find((x) => x.id === id);
+  if (!confirm(`¿Borrar «${r?.titulo ?? 'esta competición'}»?`)) return;
+  await api(`runs/${id}`, 'DELETE');
+  lista = lista.filter((x) => x.id !== id);
+  if (run?.id === id) pintarInicio(); else pintarHistorial();
 }
 async function cargarInicio() {
   const d = await api('inicio');
@@ -262,8 +305,9 @@ function abrir(id) {
     run = d.run; limites = d.limites;
     pintarLimites();
     const enLista = lista.find((r) => r.id === run.id);
-    if (enLista) enLista.estado = run.estado;
-    if (antes !== run.estado) pintarHistorial();
+    const cambiaTitulo = enLista && enLista.titulo !== run.titulo;
+    if (enLista) Object.assign(enLista, { estado: run.estado, titulo: run.titulo });
+    if (antes !== run.estado || cambiaTitulo) pintarHistorial();
     pintarRun();
   };
   pintarHistorial();
@@ -373,7 +417,10 @@ function panelHuecos() {
   if (!huecos().length) return '';
   const sab = run.sabido?.length ? `<div class="punto"><b>Lo que se da por sabido</b><ul>${run.sabido.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></div>` : '';
   // En historia solo se muestra lo que llevan las IA que siguen en juego.
-  const enJuego = (i, k) => run.modo !== 'historia' || run.estado === 'revision' || run.premisas.some((p) => p.viva && p.elige?.[i] === k);
+  const lleva = (i, k) => run.premisas.some((p) => p.viva && p.elige?.[i] === k);
+  // Suelta: la respaldó el texto, nunca la contradijo, y ya no la lleva nadie; sigue disponible.
+  const suelta = (hu, i, k) => run.modo === 'historia' && !lleva(i, k) && hu.evid?.[k]?.a > 0 && !hu.evid[k].c;
+  const enJuego = (i, k) => run.modo !== 'historia' || run.estado === 'revision' || lleva(i, k) || suelta(huecos()[i], i, k);
   const hs = huecos().map((hu, i) => {
     const ks = hu.rellenos.map((_, k) => k).filter((k) => enJuego(i, k));
     if (!ks.length) return '';
@@ -381,7 +428,7 @@ function panelHuecos() {
       const m = mediaDe(hu.notas?.[k]);
       const e = hu.evid?.[k];
       const marcas = e && (e.a || e.c) ? `<span class="etq" title="Veces que el texto la contradijo / apoyó">✗ ${e.c} · ✓ ${e.a}</span>` : '';
-      return `<li>${esc(hu.rellenos[k])}${marcas}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
+      return `<li>${esc(hu.rellenos[k])}${suelta(hu, i, k) ? '<span class="etq" title="La respaldó el texto, pero ya no la lleva ninguna IA en juego">suelta</span>' : ''}${marcas}${m === null ? '' : `<span class="etq">${nota(m)}</span>`}</li>`;
     }).join('')}</ol></div>`;
   }).join('');
   return `<details data-k="pc" ${['revision', 'terminado'].includes(run.estado) ? 'open' : ''}><summary><span class="lados" style="display:block">${run.modo === 'historia' ? 'Incógnitas en juego y sus posturas · nota media de las IA que la llevan' : `Huecos de información (${huecos().length}) y sus posibles rellenos`}</span></summary><div class="cuerpo"><div>${sab}${hs}</div></div></details>`;
@@ -402,6 +449,8 @@ document.addEventListener('click', async (e) => {
   try {
     if (b.id === 'nuevo') return pintarInicio();
     if (b.dataset.id) return abrir(b.dataset.id);
+    if (b.dataset.renombrar) return empezarRenombrar(b.dataset.renombrar);
+    if (b.dataset.borrar) return await borrarRun(b.dataset.borrar);
     if (b.dataset.modo) { modo = b.dataset.modo; return pintarCampos(); }
     const accion = b.dataset.accion;
     if (accion === 'quitar') return b.closest('.edita').remove();
@@ -413,12 +462,7 @@ document.addEventListener('click', async (e) => {
       return;
     }
     if (accion === 'detener' || accion === 'continuar') return void await api(`runs/${run.id}/${accion}`, 'POST');
-    if (accion === 'borrar') {
-      if (!confirm('¿Borrar esta competición?')) return;
-      await api(`runs/${run.id}`, 'DELETE');
-      lista = lista.filter((r) => r.id !== run.id);
-      return pintarInicio();
-    }
+    if (accion === 'borrar') return await borrarRun(run.id);
   } catch (error) { avisar(error.message); }
 });
 
