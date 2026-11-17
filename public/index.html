@@ -327,7 +327,7 @@ function pintarRun() {
     if (r.descansa) info.push(`Descansa: ${esc(titulo(r.descansa))}`);
     if (r.eliminadas.length) info.push(`Caen: ${r.eliminadas.map((id) => esc(titulo(id))).join(', ')}`);
     if (r.posturas?.length) {
-      const de = (es) => r.posturas.filter((x) => x.es === es).map((x) => esc(huecos()[x.i]?.rellenos[x.k] ?? ''));
+      const de = (es) => r.posturas.filter((x) => x.es === es).map((x) => (x.cita ? `<span title="«${esc(x.cita)}»" style="text-decoration:underline dotted">${esc(huecos()[x.i]?.rellenos[x.k] ?? '')}</span>` : esc(huecos()[x.i]?.rellenos[x.k] ?? '')));
       const [si, no] = [de('apoya'), de('contradice')];
       if (no.length) info.push(`El texto contradice: ${no.join(', ')}`);
       if (si.length) info.push(`El texto apoya: ${si.join(', ')}`);

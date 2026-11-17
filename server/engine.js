@@ -546,7 +546,9 @@ ${FORMATO_CREADOR('"idioma":"inglés",')}`,
 
 // Tras eliminar, el creador decide si entran IA nuevas (nunca toca las que siguen en juego).
 async function reforzar(run, ctx, ronda) {
-  const cupo = tope(run) - run.premisas.filter((p) => p.viva).length;
+  // Antes del último fragmento no entra nadie: jugaría una sola ronda y no podría caer.
+  const ultimo = ronda.n + 1 === run.escenas.length - 1;
+  const cupo = ultimo ? 0 : tope(run) - run.premisas.filter((p) => p.viva).length;
   if (cupo > 0) {
     run.actividad = 'El creador revisa las incógnitas y decide si entran IA nuevas…';
     ctx.emit();
@@ -611,9 +613,9 @@ async function historia(run, ctx) {
     const j = await iaJSON(run, ctx, {
       ...arbitro(run),
       system: `1) Puntúa de 1 a 10 cuánto se parece cada predicción al fragmento real en lo esencial (hechos, decisiones, intenciones, tono). La defensa, escrita después, solo señala coincidencias: no suma nada que la predicción no dijera.
-2) Para cada postura numerada (suposiciones ocultas de las IA): "contradice" si el fragmento la desmiente, "apoya" si el fragmento la respalda con claridad, "nada" si no dice nada. Ante la duda, "nada".
-No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"","puntos":1,"motivo":"una frase en español"}],"posturas":[{"n":1,"es":"nada"}]}`,
-      prompt: `Fragmento anterior:\n${run.escenas[n - 1]}\n\nFragmento real:\n${real}\n\n${ronda.predicciones.map((pr) => `[${pr.id}]\nPredicción: ${pr.texto}\nDefensa: ${pr.defensa}`).join('\n\n')}\n\nPosturas:\n${enJuego.map(({ i, k }, x) => `[${x + 1}] ${run.huecos[i].pregunta} → ${run.huecos[i].rellenos[k]}`).join('\n')}`,
+2) Para cada postura numerada (suposiciones ocultas de las IA), a la luz de toda la historia leída: "contradice" solo si una frase del fragmento nuevo la desmiente (cópiala en "cita"); "apoya" si el fragmento nuevo la respalda con claridad; "nada" si no dice nada nuevo. Ante la duda, "nada". Sé coherente con cómo se juzgó antes.
+No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"","puntos":1,"motivo":"una frase en español"}],"posturas":[{"n":1,"es":"nada","cita":""}]}`,
+      prompt: `Historia leída hasta ahora:\n${hastaAhora}\n\nFragmento nuevo:\n${real}\n\n${ronda.predicciones.map((pr) => `[${pr.id}]\nPredicción: ${pr.texto}\nDefensa: ${pr.defensa}`).join('\n\n')}\n\nPosturas:\n${enJuego.map(({ i, k }, x) => { const e = evidencia(run.huecos[i], k); return `[${x + 1}] ${run.huecos[i].pregunta} → ${run.huecos[i].rellenos[k]}${e.a || e.c ? ` (antes: apoyada ${e.a}, contradicha ${e.c})` : ''}`; }).join('\n')}`,
     });
     const notas = Array.isArray(j.notas) ? j.notas : [];
     for (const pr of ronda.predicciones) {
@@ -625,10 +627,13 @@ No atribuyas intenciones que el texto no muestre. Solo JSON: {"notas":[{"id":"",
     }
     const juicios = Array.isArray(j.posturas) ? j.posturas : [];
     ronda.posturas = enJuego.map(({ i, k }, x) => {
-      const es = String(juicios.find((y) => Number(y?.n) === x + 1)?.es ?? '').toLowerCase();
+      const juicio = juicios.find((y) => Number(y?.n) === x + 1);
+      const cita = String(juicio?.cita ?? '').trim();
+      let es = String(juicio?.es ?? '').toLowerCase();
+      if (es === 'contradice' && !cita) es = 'nada'; // sin una frase que la desmienta, no hay contradicción
       const e = evidencia(run.huecos[i], k);
       if (es === 'apoya') e.a++; else if (es === 'contradice') e.c++;
-      return { i, k, es: ['apoya', 'contradice'].includes(es) ? es : 'nada' };
+      return { i, k, es: ['apoya', 'contradice'].includes(es) ? es : 'nada', ...(es === 'contradice' ? { cita: cita.slice(0, 300) } : {}) };
     });
     for (const pr of ronda.predicciones) {
       const p = premisa(run, pr.id);
@@ -680,5 +685,6 @@ Qué se salva de lo demás: …`,
     prompt: [run.pregunta ? `Se quería averiguar: ${run.pregunta}` : '', texto].filter(Boolean).join('\n\n'),
   });
   run.ganadora = premisa(run, j.ganadora)?.viva ? j.ganadora : '';
-  run.veredicto = String(j.texto ?? '').trim();
+  // Pedirlo no basta: los ids internos se cambian por el título de cada IA.
+  run.veredicto = String(j.texto ?? '').trim().replace(/\[?\b(p\d+)\b\]?/g, (m, id) => (premisa(run, id) ? `«${premisa(run, id).titulo}»` : m));
 }
