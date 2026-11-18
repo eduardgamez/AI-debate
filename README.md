@@ -1,6 +1,6 @@
 # AI-debate
 
-Para preguntas que una IA no puede responder de primeras porque le falta información. Varias instancias defienden posibles respuestas a lo que no se sabe y discuten cuáles son más probables. 
+Para preguntas que una IA no puede responder de primeras porque le falta información. Varias instancias parten de suposiciones distintas sobre lo que no se sabe y se ponen a prueba para ver cuáles son más probables: debatiendo entre ellas (modo debate) o prediciendo cómo sigue una historia (modo historia).
 
 Usa la suscripción de Claude Code, no la API de pago.
 
@@ -25,7 +25,6 @@ Cada competición recibe un título breve que pone Haiku según su contenido. En
 5. **Filtro.** En cada ronda cae la parte peor puntuada (1 de cada 4 por defecto; se elige en el menú). Al final, un veredicto dice el relleno más probable de cada hueco y la respuesta que se sigue.
 6. **Siguiente ronda.** Se ordena por nota media y cada una se enfrenta a la mejor clasificada que aún no conozca. Si son impares descansa la peor clasificada que aún no haya descansado; con tres en pie descansa la mejor y pasa directa a la final.
 
-Entre ellas debaten en inglés; lo que lees sale en español.
 
 ## Modo historia
 
@@ -41,14 +40,16 @@ Solo sirve con historias que la IA no conozca.
 
 ## Ajustes
 
-- Modelo y razonamiento de cada papel. Por defecto: creador Opus medio, debatientes Opus bajo, árbitro Opus bajo. La final puede subirse.
-- Intercambios por duelo: 3 por defecto. Es lo que más gasta.
+- Modelo y razonamiento de cada papel. Por defecto: creador Opus medio, debatientes o predictores Opus bajo, árbitro Opus bajo. La final puede subirse.
 - Cuántas caen por ronda: 1 de cada 4, 1 de cada 3 o la mitad. Cuantas más caen, menos rondas y menos gasto.
-- Búsquedas en internet, solo cuando hacen falta.
+- Solo en debate: intercambios por duelo (3 por defecto; es lo que más gasta) y búsquedas en internet, solo cuando hacen falta.
+- Solo en historia: IA a la vez (de 2 a 20, 8 por defecto) y largo de los fragmentos si no los marcas tú (unas 150, 250 o 400 palabras).
+
+Entre ellas trabajan en inglés. Lo que lees sale en español, salvo los mensajes del debate y las predicciones, que se ven tal cual.
 
 ## Límites
 
-Arriba se ve el estado de los límites de 5 horas y semanal. Si uno se agota, el debate se para (nunca pasa a pago) y se retoma con «Continuar».
+Arriba se ve el estado de los límites de 5 horas y semanal. Si uno se agota, la competición se para (nunca pasa a pago) y se retoma con «Continuar».
 
 ## Archivos
 
